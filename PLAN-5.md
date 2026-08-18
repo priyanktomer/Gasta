@@ -276,12 +276,18 @@ than done:
 
 ---
 
-## 5. Making it easier to use — without turning it into a different app
+## 5. Making it easier to use
 
 The product owner's constraint, in their words: *"we don't need to convert abcd to
-xyz, we can only make it ABcd or abCd or abcde"*. Every item below is a change to
-**one screen's disclosure**, not a re-architecture. No new navigation model, no
-renamed concepts, no moved tabs.
+xyz, we can only make it ABcd or abCd or abcde"* — and, on a second pass,
+*"I'm allowing few changes, it is not like we can't do things"*, with the real
+test being that **something important or something which is currently really good
+shouldn't be compromised**.
+
+So: this is not a list of tiny edits. §5.6 proposes swapping a tab, which is the
+largest change in it. The bar every item has to clear is not "is it small" but
+**"does it cost anything that currently works"** — and each one below says what it
+protects.
 
 ### The principle
 
@@ -350,65 +356,480 @@ register, the visit card, or Profile instead — not at the end of a new chain.
 - **The notifications list** shows every alert at full height. A read alert could
   be one line.
 
-### 5.6 What *not* to do
+### 5.6 The tab bar is worth reopening
 
-- Don't add a tab. Five is right.
-- Don't introduce a card/list toggle, a density setting, or a customisable home.
-  Every one of those is a question asked of a user who came here to find out what
-  time to arrive tomorrow.
-- Don't move the money screens. People have learned where they are.
+Five tabs: **Home · Work · Dashboard · Alerts · Profile**. Five is the right
+number and the bar should stay — but one of those five is probably the wrong
+occupant.
 
----
+**The case against Alerts having a tab.** It is a list of machine-written
+messages. It earns a permanent quarter-inch of every screen because it is
+noisy, not because it is important — and a bell with a badge **already exists**
+in the Dashboard app bar, so the tab is partly redundant today. Urban Company,
+Yes Madam and every comparable app put notifications behind a bell.
+
+**What deserves the slot instead: Today.** The thing a user opens this app to
+find out is *"what do I have today, and what do I do about it"*. Right now that
+is Dashboard → "2 jobs today" → My Accepted Tasks: **three taps to the single
+most-used screen in the product**, and for an organiser the equivalent path is
+worse.
+
+A **Today** tab would be: this day's visits for whichever role you are, with the
+one action each needs inline — *On my way* for the earner, *did she come?* for
+the organiser — and tomorrow's below it. It is not a new screen so much as a
+promotion of one that already exists to where it belongs.
+
+**The change, concretely:**
+
+| Slot | Now | Proposed |
+|---|---|---|
+| 1 | Home | Home |
+| 2 | Work | Work |
+| 3 | Dashboard | **Today** |
+| 4 | Alerts | Dashboard |
+| 5 | Profile | Profile |
+
+Notifications move to the bell in the app bar — put it on every top-level screen,
+not just Dashboard, and keep the unread count that §6.2 made correct.
+
+**What this deliberately protects.** Dashboard is genuinely good and is *not*
+being removed: its Organiser/Earner split is the only place a dual-role user sees
+both halves of their life at once. It moves one slot, it does not go. Home's
+catalogue browse stays first — it is the discovery surface and the reason a new
+user gets anywhere.
+
+**Also worth considering, with more caution: role-aware tabs.** The app already
+asks "what do you use Gasta for" (F-7). Somebody who only works could get *Today ·
+Work · Dashboard · Profile*; somebody who only hires could get *Today · Home ·
+Dashboard · Profile*. This is a bigger change than the swap above and should be
+done **after** it, if at all — a tab bar that differs between two people who are
+talking to each other about the app is a support cost.
+
+**One thing to fix regardless of the layout:** `navHome` and `navWork` are
+translated; **"Dashboard", "Alerts" and "Profile" are hardcoded English.** Three
+of the five permanent labels in a product for Hindi speakers cannot be translated
+today. "Dashboard" is also the worst word in the app for this audience — it is
+jargon in any language.
+
+### 5.7 Icons and infographics
+
+The register's day-status legend — ✓ Worked, ✗ Did not come, Leave, Left early,
+Questioned, To come — is the best thing in the app for a low-literacy reader, and
+it is the pattern the rest should follow. Where it does not:
+
+**A real bug, visible in the screenshots.** On Doorstep Services, **three of the
+four professions draw a clothes hanger**: Pickup Drop Cloth Wash (correct),
+Cylinder and Heavy Item Delivery (wrong), and Water Supply (wrong). Only
+Appliance Mechanic has its own. Somebody scanning that grid by picture — which is
+the whole point of a picture — sees three laundries. Fix the catalogue icons for
+professions 51 and 52.
+
+**Status is still words.** "Scheduled", "PENDING", "DELIVERED", "CANCELLED",
+"Assigned" are rendered as text chips. `AppStatus` already owns the colour map;
+give it an icon per status and use it everywhere a status appears. Colour alone
+is not enough — roughly 1 in 12 men has some colour-vision deficiency, and this
+audience skews male on the farm-labour side.
+
+**Where an infographic earns its place** — explaining a *concept* to somebody who
+cannot read the paragraph that would otherwise explain it:
+
+1. **First-run: how the register works.** Three panels — she comes, you both see
+   the same days, the total adds itself up. This is the product's core idea and it
+   is currently explained nowhere.
+2. **How advances work.** "Money given early is written down, and shown next to
+   the wage — it is never taken off automatically." One picture prevents the
+   single most likely misunderstanding about money in the app.
+3. **The work record (§7.4) as something you can show someone.** It is currently
+   plain text meant to be forwarded on WhatsApp. A card with the profession icons,
+   the years, the visit count and the rating — designed to be *read across a bank
+   counter* — is worth more than the sentence, and costs one screen.
+4. **Crew jobs.** "Needs all 10 together" already has a group icon; the concept of
+   all-or-nothing deserves one line of illustration where a crew job is opened.
+
+**Smaller, cheap wins:** a type icon on every notification row (reminders already
+have one); an icon in each empty state that says which *kind* of empty this is;
+and the ₹ glyph duplication in T11.11 — an icon beside text that already contains
+the symbol — fixed once in the shared money component.
+
+### 5.8 What to be careful with
+
+Not a prohibition list — the tab swap above is exactly the kind of change worth
+making. The point is only that these are the things currently *working*:
+
+- **Five tabs.** Add a sixth and the labels stop fitting at 720px, in Hindi first.
+- **The money screens' locations.** People learn where money lives; moving the
+  register or earnings costs more than it gains.
+- **The register's icon legend.** Extend the pattern; do not redesign it.
+- **Don't add a density setting or a customisable home.** Every preference is a
+  question asked of somebody who opened the app to find out what time to arrive.
 
 ## 6. What else it needs to be a complete app
 
-Beyond the operational list in §2:
+### 6.1 Measured against Urban Company and Yes Madam
 
-- **Onboarding.** There is a language picker and a "what do you use Gasta for"
-  question, and then the user is on their own. No first-run explanation of the
-  register, advances, or how to claim an engagement somebody recorded for them.
-- **Help that answers real questions.** "Get help" exists; it needs the eight
-  questions support will actually receive.
+Most of their feature list is deliberately not Gasta's — they optimise for
+matching strangers quickly and taking a cut. But five things they do are things
+**any** household-services product needs, and four of them are missing here.
+
+**a) Household reliability is not tracked, and worker reliability is.** ⚠️
+
+`UserReputation` counts `visitsMissed` and `engagementsLeftEarly` — both about
+the *worker*. There is no equivalent for the household: no count of last-minute
+cancellations, no record of an organiser who books and is repeatedly not there.
+
+This is an asymmetry with real consequences. When an organiser cancels at 6am the
+earner has already travelled or already turned down other work, and nothing
+anywhere remembers it. A product whose thesis is that the worker is a person with
+a livelihood cannot measure only her failures. Add the mirror-image counters and
+show them the same way — **counts beside their context, never a score** (T7.7's
+rule).
+
+**b) The ID-verified badge exists and nobody sees it.**
+
+`UserReputation.idVerified` is set by ops (T10.2) and carried on `ReputationDto`
+— but the profile screen that would show it does not exist (§3.2). A household is
+letting a stranger into their home; "ID checked by Gasta" is the single most
+valuable thing to display, and it is already computed.
+
+**c) There is no cancellation policy of any kind.**
+
+Both sides can walk away with no stated expectation. UC charges fees; Gasta is
+not in the payment path and should not. But it can and should **state** the
+expectation and **record** the behaviour — which is (a). Silence here reads as
+"nobody minds", and the person it costs is whoever travelled.
+
+**d) No receipt.** Covered by §2.3 — the wage-payment ledger *is* the receipt.
+
+**e) No grievance route with a name on it.** Covered by §7.3 — and it is a legal
+requirement, not a nicety.
+
+**What Gasta already does better and should not lose:** the safety alert during a
+visit (T5.9), "Tell someone" sharing a visit, the visit code at the door, the
+attendance register itself, and advances. None of the comparison apps have the
+last two, and they cannot easily — they depend on the relationship being the
+unit.
+
+### 6.2 Still missing, product-wide
+
+- **Onboarding.** A language picker and a role question, then the user is alone.
+  Nothing explains the register, advances, or how to claim an engagement somebody
+  recorded for you. See §5.7 for the infographic that does most of this work.
+- **Help that answers real questions.** "Get help" exists and is empty of content.
 - **Dispute resolution.** Days can be flagged (§7.1) and advances disputed
-  (§7.2), and then nothing happens. Ops has a queue and an audit log — connect
-  them.
-- **Analytics.** Nothing is measured, so nothing about how the product is
-  actually used is knowable. Self-hosted Plausible or Umami if the objection is
-  cost.
-- **Empty states with a next step.** Several exist; several still say only that
-  the list is empty.
-- **A way to delete an account and its data.** Required by Play policy, and by
-  anyone who asks.
+  (§7.2), and then nothing happens to them. Ops has a queue and an audit log —
+  connect the two ends.
+- **Account and data deletion.** Required by Play policy and by the DPDP Act
+  (§7.4). Does not exist.
+- **Analytics.** Nothing is measured, so nothing about real usage is knowable.
+  Self-hosted Plausible or Umami if cost is the objection.
+- **e-Shram nudge.** Helping an earner register for the national unorganised-worker
+  ID is genuine value, costs nothing, and sits exactly where the work record does.
+
+## 7. Terms, policies, and Indian law
+
+> **This is not legal advice and I am not a lawyer.** It is a map of the
+> obligations a platform in this shape has in India, written so the right
+> questions get asked. **An Indian lawyer must review the actual documents before
+> a single real user signs up** — a labour marketplace is one of the worst places
+> to rely on a template.
+
+The exposure here is not theoretical. Gasta connects households with **domestic
+and farm workers**, which lands it in labour law, consumer law, data law, and
+intermediary law simultaneously.
+
+### 7.1 What Gasta legally *is* — get this right first
+
+Everything else follows from one framing decision, and it must be stated in the
+terms and be **true in the product**:
+
+**Gasta is an intermediary. It is not an employer, and not a staffing agency.**
+
+If a court or a labour inspector concludes otherwise, minimum wage, PF, ESI,
+gratuity and termination obligations attach to Gasta for every worker on it. The
+things that keep that framing honest are mostly already true and worth
+protecting:
+
+- Gasta is **not in the payment path** — the money is cash between two people.
+  This is the strongest single fact in its favour. §2.3 must stay a *ledger*.
+- Gasta does not direct the work, set hours, or supervise.
+- The household is the principal; the worker is independent.
+
+**One thing to word carefully: §7.5 rate guidance.** "People nearby pay ₹550–650"
+is information. If it reads as instruction, it starts to look like a platform
+setting wages — which is an employer-ish act *and* touches competition law. Keep
+it descriptive, keep it a range, and never make it a default that fills a field.
+
+**And a hard floor:** the guidance must never suggest below the state-notified
+minimum wage for that work. Several states notify minimum wages for domestic
+work. That is both the ethical line and the legally protective one.
+
+### 7.2 Child labour — the single biggest exposure ⚠️
+
+Domestic work is a **prohibited occupation for children under 14**, and hazardous
+for adolescents 14–18, under the Child and Adolescent Labour (Prohibition and
+Regulation) Act. A platform that facilitated the hiring of a minor into a home
+would be in serious trouble, and "we didn't know" is not a defence anybody wants
+to test.
+
+**What the product needs:**
+
+- **A date of birth or age declaration at signup**, not just a checkbox.
+- **A hard block on under-18 earner accounts**, stated in the terms.
+- Ops tooling to act on a report, and an audit trail when they do (both exist).
+- The prohibition written plainly in the terms *and* surfaced where an organiser
+  adds a worker manually (§7.3 add-existing-worker is the risky path — it creates
+  a worker record from a phone number with no verification).
+
+### 7.3 Intermediary status and grievance redressal
+
+To keep IT Act §79 safe harbour and comply with the **IT (Intermediary
+Guidelines) Rules 2021**:
+
+- Publish **Terms of Use** and **Privacy Policy**, accessible without logging in.
+- **Appoint a Grievance Officer** — real name, email, physical address, published
+  in the app. **Acknowledge complaints within 24 hours; resolve within 15 days.**
+- Act on a valid court or government takedown order within 36 hours.
+- Retain registration information for 180 days after account cancellation.
+
+The **Consumer Protection (E-Commerce) Rules 2020** apply on top, since Gasta is
+a marketplace e-commerce entity: display legal name and address, customer care
+details, and grievance officer; no unfair trade practice; do not misrepresent
+ratings. Their clock is **48 hours to acknowledge, one month to redress**.
+
+Practically: one screen with the entity details and the officer's name, one
+in-app complaint form that writes to the existing ops queue, and an SLA timer.
+
+### 7.4 Data — the DPDP Act 2023
+
+This is the newest and the least covered. **There is no consent flow anywhere in
+the app today**, and Gasta collects phone numbers, precise location, home
+addresses and work history.
+
+What it needs:
+
+- **Notice and consent before collection**, itemised by purpose, in plain
+  language **and in Hindi** — a consent notice only in English is arguably no
+  consent at all for this audience.
+- **Purpose limitation and minimisation.** Location is needed by one screen
+  (Earning Zone); it should not be collected as though it were needed by all.
+- **Rights: access, correction, erasure.** Account deletion must actually delete,
+  with the audit log and legally-required records as documented exceptions.
+- **Breach notification** to the Data Protection Board and to affected users.
+- **Children's data** needs verifiable parental consent — which is another reason
+  §7.2's age gate is not optional.
+- A **grievance route for data specifically**, which can be the same officer.
+
+### 7.5 Labour and social security, at scale
+
+Not blockers today; they become real as soon as there is volume, and the design
+choices are cheaper to make now:
+
+- **Code on Social Security 2020** defines *aggregators* — and the schedule
+  explicitly contemplates domestic and other services. Aggregators can owe **1–2%
+  of turnover** to a social security fund for gig and platform workers. Gasta has
+  no turnover today because it takes no cut; the moment it does, this attaches.
+- **POSH Act 2013.** A household is a workplace for a domestic worker. A platform
+  connecting them should have a stated anti-harassment policy and a route to
+  complain — the safety alert (T5.9) is the mechanism; the policy is missing.
+- **e-Shram** registration for unorganised workers: encourage it (§6.2). It helps
+  the worker and demonstrates good faith.
+
+### 7.6 The documents themselves
+
+Minimum set, all needed before a public listing:
+
+| Document | Notes |
+|---|---|
+| **Terms of Use** | The intermediary framing (§7.1), prohibited uses, the under-18 rule, account termination, limitation of liability, indemnity, governing law and a named Indian jurisdiction, arbitration if wanted. |
+| **Privacy Policy** | DPDP-shaped: what, why, how long, who it is shared with, rights, officer. |
+| **Worker terms** | Separate and *shorter*. The person with the least reading ability should not be handed the longest document. |
+| **Community / conduct rules** | Harassment, discrimination, safety, and what gets an account removed. |
+| **Cancellation expectations** | §6.1(c). Not a fee — a stated expectation and a recorded behaviour. |
+| **Grievance page** | Officer name, address, email, SLA. |
+
+**Two drafting cautions.** Indian consumer courts routinely read down one-sided
+terms, so an over-reaching limitation of liability protects less than a
+reasonable one. And every one of these must exist **in Hindi** to mean anything
+here — an English-only consent screen in front of a user who cannot read English
+is the kind of thing that looks worst in hindsight.
+
+### 7.7 Consent, in the product
+
+The engineering half of all of the above is small and specific:
+
+1. A first-run **consent screen** — plain language, Hindi, itemised, with a real
+   "no" that does not simply exit.
+2. **Consent stored with a version and timestamp**, so it can be shown later that
+   this user agreed to *that* text on *that* day. Re-prompt when the text changes.
+3. Terms/Privacy reachable **from the login screen**, not only from inside.
+4. **Account deletion** that works, with a stated retention exception list.
+5. An **age gate** at signup (§7.2).
 
 ---
 
-## 7. Suggested order
+## 8. Testing
 
-**First — the things that block a real user:**
+**There are two test files in the entire product**
+(`ScheduleExpansionServiceImplTest.java`, `widget_test.dart`). Everything else
+has been verified by hand, in the emulator, once — which found a great deal, and
+guarantees nothing about tomorrow.
 
-1. **§2.1 OTP.** Start DLT registration today; it is measured in weeks.
-2. **§2.5 backups.** An hour of work against irreversible loss.
-3. **§2.3 wage payment ledger.** The largest product hole and squarely in the
-   thesis.
-4. **§2.6 Hindi for the money screens.** The register and advances in English is
-   the wrong way round for this audience.
+### 8.1 Build the suite out of the bugs that actually happened
 
-**Then — the things that make it usable:**
+Before writing a coverage target, write a test for each defect this project has
+already produced. They are real, they are documented in PLAN-3, and every one of
+them **passed both compilers**:
 
-5. **§5.1 the eight-button card.** Highest ratio of relief to risk in the app.
-6. **§5.2 job tiles**, **§5.3 Profile grouping**.
-7. **§3.2 the one profile screen** that makes four built endpoints reachable.
+| Bug | Test that would have caught it | Layer |
+|---|---|---|
+| `SERVICE_TYPE` NOT NULL vs a null-writing entity (×2 tables) | Save a non-laundry rate / order item against a real schema | Integration |
+| `COALESCE` on a BIT column → `BigDecimal` projection failure | Call `get-nearby-jobs` and assert 200 | Integration |
+| `t.INSTANT_HIRE` — column does not exist | Any execution of that native query | Integration |
+| `findByActive...AndCrewAllOrNothing` — Spring reads `Or` as a keyword | Context loads | Integration |
+| Three `Slot` labels 4–16 hours wrong | Label derived from the constant name | Unit *(now a runtime guard — keep both)* |
+| `givenOn` serialised as `[2026,8,10]` | Assert the JSON shape of every date field | Contract |
+| Earnings counted past-dated visits as future income | Fixed clock, seeded visits either side of today | Unit |
+| Unread badge counted one page, not the total | 40 unread, assert 40 | Contract |
+| `crewAllOrNothing` lost because a screen built `Task` by hand | Parse a payload through *every* constructor | Widget |
+| Auto-assigned order acceptable by nobody | State machine: assigned + PENDING → accept succeeds | Integration |
+| Network failure cleared the session | `refreshAuthToken` with an unreachable host | Unit |
+| Household member confirming a visit | Authorisation matrix (§8.4) | Integration |
 
-**Then — the rest:**
+That table is the first sprint. It is worth more than any percentage.
 
-8. §2.2 push, §2.7 store readiness, §7.8 handover, T9.6, and the §4 issues.
+### 8.2 The layers, and what each is actually for
+
+**a) Backend integration tests — start here, highest value by far.**
+
+`@SpringBootTest` + **Testcontainers** (MySQL and Redis). This is the layer that
+catches the entire class of bug that hurt most: native SQL against a real schema,
+Flyway migrations actually applying, entity/column disagreements, and projections.
+Mocked repositories would have caught **none** of the twelve above.
+
+Run migrations from V1 on a clean container every time — that also continuously
+verifies the migration chain, which is the gate for `ddl-auto=validate` (§2.4).
+
+**b) API contract tests — one per endpoint, five cases each.**
+
+There are roughly 90 endpoints. For each: happy path · wrong user (403/404) ·
+invalid input (400) · not found · and the **date/enum shape of the response**.
+The date-array bug and the raw-code-shown-to-users bug are both contract bugs.
+
+Add one meta-test that fails when an endpoint has **no caller in the app** —
+§6.7's audit was done by hand and the drift will recur.
+
+**c) Backend unit tests** for the logic worth isolating: occurrence generation,
+the register's payable/unrecorded split, advance balance arithmetic, crew
+counting, rate guidance banding, retention cutoffs. Inject a fixed clock — half
+of these are date logic and "today" is not a constant.
+
+**d) Flutter widget tests — cheap now that `ApiState` exists.**
+
+Every converted screen has exactly four states. Test all four per screen:
+loading · ready · **stale** (the offline banner) · failed. That is ~60 small
+tests and it locks in the §6.2 work, which is otherwise invisible until somebody
+loses signal.
+
+Plus the specific things that broke: a `Column` overflow at **720×1280** with the
+keyboard up, and text at `textScaler` 1.6 (the clamp in `main.dart`).
+
+**e) Flutter integration tests** (`integration_test`) for the golden flows only —
+they are slow, so keep them few and load-bearing:
+
+1. Sign in → today's visit → *On my way* → mark done.
+2. Post a job → receive a quote → accept → visits appear.
+3. Register a provider → book doorstep → through to DELIVERED.
+4. Open the register → record an advance → other side agrees.
+5. Take a crew job with a group size → organiser answers the partial fill.
+6. **Go offline → cold start → today's visit still readable.**
+
+**f) A manual checklist for what automation cannot see.** Contrast, icon
+correctness (§5.7), Hindi truncation, and whether a sentence actually makes sense
+to somebody who reads slowly. Keep it short and run it before each release.
+
+### 8.3 Test data has to stop being hand-written SQL
+
+Every verification in the last session started with hand-written `INSERT`s, and
+each one had to be cleaned up afterwards. That is slow and it is why some
+scenarios never got tested.
+
+Build a **seed profile**: an organiser, three earners, a household with members,
+tasks in each state, a half-filled crew, a doorstep provider, an advance awaiting
+agreement. One command to load, one to reset. Every test and every manual check
+starts from it.
+
+### 8.4 The scenario matrix
+
+Test the axes that actually interact, not the cross product of everything:
+
+- **Role** — organiser · earner · both · household member · ops
+- **Engagement state** — open · quoted · assigned · running · trial · ended ·
+  expired · partly-filled crew
+- **Network** — online · offline-with-cache · offline-cold · slow
+- **Data** — empty · one · many · long strings · Hindi
+- **Time** — before/during/after a visit; month boundaries (the register); a
+  deadline passing (the crew sweep)
+
+**The authorisation matrix deserves its own table** and is the one place to be
+exhaustive: for every endpoint, assert what a *non-party* gets. §7.10 widened
+exactly one organiser check out of 27 — a test should fail loudly if a twenty-
+eighth ever quietly opens.
+
+### 8.5 CI
+
+GitHub Actions on push: `flutter analyze` + `flutter test`, and `mvnw verify`
+with Testcontainers. Free for these repositories at this size. Add the migration
+run as its own step so a broken migration fails the build rather than the next
+person's morning.
+
+**One rule worth adopting now:** a bug found by hand gets a test in the same
+change that fixes it. Every entry in §8.1 exists because that was not the rule.
+
+---
+
+## 9. Suggested order
+
+Three things run on wall-clock time rather than developer time. **Start them on
+day one and let them run in the background**, because nothing else can finish
+without them:
+
+- **DLT / sender-ID registration** for OTP (§2.1) — weeks.
+- **A lawyer engaged** for §7 — the documents cannot be the last thing.
+- **Database backups** (§2.5) — an hour of work against irreversible loss.
+
+**Then, in order:**
+
+1. **§2.1 OTP delivery.** The hard launch blocker.
+2. **§8.1 the regression suite from bugs that already happened**, and §8.2(a)
+   Testcontainers. Do this *before* the next feature, not after — every entry in
+   that table cost real time to find by hand once.
+3. **§2.3 the wage-payment ledger.** The biggest product hole, and the receipt
+   half of §6.1(d).
+4. **§7.7 consent + §7.2 age gate + §7.3 grievance officer.** Small engineering,
+   large exposure, and the age gate is the one with teeth.
+5. **§2.6 Hindi for the money screens**, and the three hardcoded tab labels.
+
+**Then the usability work, which is cheap and immediately felt:**
+
+6. **§5.1 the eight-button card** — highest ratio of relief to risk in the app.
+7. **§5.6 the tab swap** (Today in, Alerts to a bell) and **§5.7's wrong icons** —
+   three doorstep professions currently draw a clothes hanger.
+8. **§5.2 job tiles**, **§5.3 Profile grouping**, **§5.7's onboarding
+   infographics**.
+9. **§3.2 the one profile screen** — makes four built endpoints reachable and
+   surfaces the ID-verified badge (§6.1(b)).
+
+**Then:**
+
+10. §6.1(a) household reliability counters, §2.2 push, §2.7 store readiness,
+    §7.8 handover, T9.6, and the §4 issues.
 
 **Deliberately last:** §7.6 / T9.5 (blocked on the toolchain), T11.8, T5.7
 (deferred by the owner).
 
 ---
 
-## 8. A note on how the last session went
+## 10. A note on how the last session went
 
 Twelve items were delivered and verified on the emulator. The pattern worth
 carrying forward: **almost every real defect was found by looking at the screen

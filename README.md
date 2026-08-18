@@ -22,7 +22,7 @@ Clone them as siblings inside this folder and the paths in the plans work.
 
 | Document | Read it for |
 |---|---|
-| **PLAN-5.md** | **What to do next.** The current entry point. |
+| **PLAN-5.md** | **What to do next.** The current entry point — operational readiness, UI, legal (§7), testing (§8). |
 | **PLAN-4.md** | The product thesis, the architecture, and the rules learned the hard way. §1–§4 are still current. |
 | **PLAN-3.md** | The detailed history — every item's reasoning and every defect found. |
 | **DESIGN-RULES.md** | Binding UI rules. |

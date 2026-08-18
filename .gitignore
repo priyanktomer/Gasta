@@ -1,0 +1,28 @@
+# This repository holds the planning and design documents only.
+#
+# The code lives in its own repositories, checked out as sibling folders here:
+#
+#   JeevikaService/      → github.com/priyanktomer/JeevikaService
+#   Yapan/               → github.com/priyanktomer/yapan
+#   access-app/          → github.com/priyanktomer/access-app
+#   super-methods/       → github.com/priyanktomer/super-methods
+#   mysql-multitenancy/  → github.com/priyanktomer/mysql-multitenancy
+#
+# They are ignored here so this repo never turns them into gitlinks — cloning
+# this on a fresh machine should give you the documents, and you clone the code
+# repos beside it.
+JeevikaService/
+Yapan/
+access-app/
+super-methods/
+mysql-multitenancy/
+
+# ── OS / editor ──────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ── Scratch ──────────────────────────────────────────────────────────────
+*.log

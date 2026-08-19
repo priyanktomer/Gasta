@@ -84,11 +84,16 @@ each verified by reintroducing the original defect**, `scripts/seed.sql` +
 `reset.sql` work, and CI runs on both repositories — green on the app, and on
 the backend pending one repository secret (`GH_PACKAGES_TOKEN`).
 
-Outstanding from Phase 1: three of the five contract cases — happy path,
-invalid input, not found — each of which needs a fixture per endpoint; and the
-Flutter golden flows in `integration_test/`. The other two cases (wrong user
-anonymous, response date/enum shape) are swept across every endpoint, as is
-`X-Request-Id`. **51 backend tests and 27 app tests, all green.**
+Four of the five contract cases are now swept across every endpoint — anonymous
+access, invalid input, and response date and enum shape — plus `X-Request-Id`,
+and two golden flows go through the real front door with real tokens. **The
+invalid-input sweep found six defects, all fixed** (PLAN-3 §28), including
+`register-interest` silently saving an empty row into the demand-signal table.
+
+Outstanding from Phase 1: per-endpoint happy paths beyond the two written, the
+wrong-*authenticated*-user case where it is not hand-written, and the Flutter
+golden flows in `integration_test/`, which need a device. **60 backend tests and
+27 app tests, all green.**
 
 | Phase | State |
 |---|---|

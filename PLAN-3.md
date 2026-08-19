@@ -3543,9 +3543,72 @@ fixtures and are still open.
 | **wrong user** — wrong *authenticated* user | ◐ only where written by hand (household matrix, doorstep accept) |
 | **response date shape** | ✅ swept: every date field on every DTO and entity |
 | **response enum shape** | ✅ swept: every enum field, plus the global index switch |
-| **happy path** | ✗ needs a fixture per endpoint |
-| **invalid input** | ✗ |
-| **not found** | ✗ |
+| **invalid input** | ✅ swept: every write endpoint, signed in, empty body |
+| **happy path** | ◐ sign-up → token → read; post a job → an earner finds it |
+| **not found** | ◐ swept incidentally — the invalid-input sweep uses an id that does not exist |
+
+### Six defects the invalid-input sweep found, all fixed
+
+The sweep signs a real user up over HTTP and sends `{}` to every write endpoint.
+The rule is narrow and worth stating exactly: **the server may refuse anything it
+likes, but it must refuse on purpose.** Five endpoints did not.
+
+| Endpoint | Was | Cause |
+|---|---|---|
+| `get-nearby-jobs` | 500 `Cannot invoke "String.trim()" because "in" is null` | `@RequestBody` with no `@Valid`, DTO with no constraints |
+| `post-new-job` | 500 `Cannot parse null string` | same |
+| `post-instant-job` | 500 `Cannot parse null string` | same |
+| `provider/register` | 500 `Something went wrong` | **had `@Valid`**, on a DTO with nothing to check |
+| `refresh-token` | 500 `Could not refresh token` | null token pair passed into `access-app`, threw there |
+
+`provider/register` is the sharper lesson: `@Valid` on a class with no
+constraints is a check that cannot fail, and in review it reads as though
+validation is handled.
+
+Constraints were added **only to fields the code dereferences unconditionally**
+— `Double.parseDouble` on the coordinates, `Long.parseLong` on `addressId`,
+`findById` on `professionId`. That reasoning is what makes the change safe:
+requiring a field can only narrow what is accepted, and every request now
+refused with a 400 was previously getting a 500, so no working flow can break.
+
+`refresh-token` is not validation. The app cannot tell a 500 from a genuine
+rejection — `refreshAuthToken` maps every non-connection failure to
+`rejected` — so a malformed request looked exactly like "the server says your
+session is over", and cleared it. It answers 401 now.
+
+**The sixth is the one to read.** `register-interest` answered **200** to an
+empty body and *saved* a `ServiceInterest` with a null place and a null
+profession. That table is the only demand signal this product gets for free
+(T8.4), and it is deliberately not deduplicated — because ten people from one
+village is a stronger signal than one. Junk rows there do not waste space; they
+inflate the number somebody will use to decide where to start work. It was found
+only because the sweep has a second test asserting endpoints do **not** accept an
+empty body, which is the same lesson as the authentication sweep: a sweep needs a
+case that must fail.
+
+Five endpoints legitimately accept an empty body and are allowlisted with a
+reason each. The clearest is `safety-alert`, where the controller already says
+one tap has to be enough for somebody standing in a stranger's house unable to
+speak — requiring a field there would be the bug.
+
+### Signing in for real, and the trap in it
+
+`ApiClient` signs a test user up through the front door and keeps their tokens,
+so a happy path goes through the filter chain, the token, the JSON and the status
+code rather than around them. It works because `access-app-otp` is not "Yapan",
+so `OtpServiceImpl` returns a fixed `000000`. **Phase 2 removes that property**,
+and the helper says so in its own comment: when a real SMS provider lands this
+must move to whatever development bypass replaces it, and the day the constant
+disappears these tests fail loudly rather than silently signing nobody in.
+
+The trap is the throttle. Three Redis keys, and the third is the one that bites:
+`gasta-rate:otp-ip:127.0.0.1` is shared by **every test in the suite**, because
+they all come from loopback, and it allows forty an hour. A suite that signs in
+forty-one times starts failing at whichever test happens to be forty-first — and
+that test moves as tests are added. The counters outlive the run, so the seventh
+run of a signing-in file within an hour fails with "We have already sent a few
+codes to this number": a real guard doing its job, reported as a broken test.
+Cleared in setup, never relaxed (Phase 2: "Don't relax the rate limits").
 
 Plus `X-Request-Id`, which §I.2 leans on for support and nothing was asserting.
 
@@ -3568,9 +3631,11 @@ tell "everything is fine" from "nothing is running".
 
 ### Not done in this session
 
-The two contract cases a sweep cannot do — **happy path** and **invalid input**,
-plus **not found** — because each needs a fixture built for that endpoint. And
-the Flutter golden flows in `integration_test/`.
+**Per-endpoint happy paths beyond the two golden flows written** — each needs a
+fixture built for that endpoint, and the two that exist (sign-up, and post a job
+→ an earner finds it) are the ones everything else depends on. **The wrong
+*authenticated* user case** is still only covered where it was written by hand.
+And the Flutter golden flows in `integration_test/`, which need a device.
 
 The emulator work stays on the product owner's machine: this session had no
 `/dev/kvm`, so no Android emulator could run. Everything else — MySQL, Redis,

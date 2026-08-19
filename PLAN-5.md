@@ -77,6 +77,24 @@ pins `[17,22)`.
 
 ## I.3 State of play
 
+**Phase 1 is mostly done — see PLAN-3 §28.** The migration chain now builds a
+database from nothing (it could not, which blocked the whole phase), the
+Testcontainers harness exists, **all twelve III.D.1 rows have a regression test,
+each verified by reintroducing the original defect**, `scripts/seed.sql` +
+`reset.sql` work, and CI runs on both repositories — green on the app, and on
+the backend pending one repository secret (`GH_PACKAGES_TOKEN`).
+
+Four of the five contract cases are now swept across every endpoint — anonymous
+access, invalid input, and response date and enum shape — plus `X-Request-Id`,
+and two golden flows go through the real front door with real tokens. **The
+invalid-input sweep found six defects, all fixed** (PLAN-3 §28), including
+`register-interest` silently saving an empty row into the demand-signal table.
+
+Outstanding from Phase 1: per-endpoint happy paths beyond the two written, the
+wrong-*authenticated*-user case where it is not hand-written, and the Flutter
+golden flows in `integration_test/`, which need a device. **60 backend tests and
+27 app tests, all green.**
+
 | Phase | State |
 |---|---|
 | 0–4B | ✅ Complete |
@@ -186,7 +204,9 @@ flow and a tab change — all touching things that already broke once.
    `mvnw verify`. Free at this size. Migrations as their own step.
 
 **Verify.** Deliberately break something and watch the suite fail: revert V8's
-`ALTER` and confirm the doorstep-registration test goes red (rule 6).
+`ALTER` and confirm the doorstep-registration test goes red (rule 6). ✅ Done —
+it fails with `Column 'SERVICE_TYPE' cannot be null`, the original production
+error. Three other guards were proved the same way; see PLAN-3 §28.
 
 **Done when:** the twelve regression tests pass, `seed.sql` reproduces a full
 dataset in one command, CI is green on a push.
@@ -721,6 +741,7 @@ Small, independent, safe to do in any gap. Detail in III.B.
 | **D-3 in-app payments** | Correctly out of scope | **Not** the same as Phase 4, which is a record, not a payment. |
 | **D-6 multi-tenancy** | Inert by choice | — |
 | **Random OTP** | Was deferred | Now Phase 2 — the launch blocker. |
+| **D-7 instant hire, posting side** | Deferred 2026-08-19 — **not in PLAN-5** | The accepting half is built and the posting half has no caller, so the flag is carried on every job payload for a feature nobody can create. Low and static: the endpoint is authenticated and organiser-scoped. Detail in DEFERRED.md D-7. |
 
 ## III.B Known issues, unfixed
 

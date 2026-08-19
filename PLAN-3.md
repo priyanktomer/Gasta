@@ -3393,15 +3393,49 @@ So it builds its own schema that nothing but Flyway has touched, and runs
 `ddl-auto=validate` so Hibernate must check and may not repair. That passing is
 Phase 12's gate, now standing rather than assumed.
 
-Against III.D.1, this session covers four of the twelve rows, all verified by
-reintroducing the original bug and watching the test go red (rule 6):
+**All twelve III.D.1 rows now have a regression test**, and every one was
+verified by reintroducing the original defect and watching it go red (rule 6).
+A test that has never failed is not known to work, so none of these are taken on
+trust:
 
-| Row | Test | Proved by |
+| Row | Test | Proved by reintroducing the bug |
 |---|---|---|
 | `COALESCE` on a BIT → BigDecimal projection | `NearbyJobQueryTest` | `Cannot project java.math.BigDecimal to java.lang.Boolean` |
 | `t.INSTANT_HIRE` — column does not exist | `NearbyJobQueryTest` | `Unknown column 't.INSTANT_HIRE'` |
-| `SERVICE_TYPE` NOT NULL vs null-writing entity ×2 | `DoorstepRegistrationTest` | reverting V8's `ALTER` → `Column 'SERVICE_TYPE' cannot be null` |
-| (new) chain cannot build an empty database | `SchemaBuiltByFlywayOnlyTest` | reverting V1 to `SELECT 1` → the 1146 above |
+| `SERVICE_TYPE` NOT NULL vs a null-writing entity (×2) | `DoorstepRegistrationTest` | reverting V8's `ALTER` → `Column 'SERVICE_TYPE' cannot be null` |
+| `findByActive…AndCrewAllOrNothing` — context loads | every `@SpringBootTest` in the suite | a context that will not start fails all of them |
+| Three `Slot` labels 4–16 hours wrong | `SlotLabelTest` | the enum's own message, naming both strings |
+| `givenOn` serialised as `[2026,8,10]` | `DateSerialisationTest` | flipping `write-dates-as-timestamps` → seven fields named |
+| Earnings counted past-dated visits as future income | `EarningsPastAndFutureTest` | removing the past-date branch → 3 of 4 red |
+| Unread badge counted one page, not the total | `UnreadNotificationCountTest` | capping the count → expected 60, was 50 |
+| `crewAllOrNothing` lost to a hand-built `Task` | `task_construction_test.dart` | deleting the line → `Actual: Set:['crewAllOrNothing']` |
+| Auto-assigned order acceptable by nobody | `AcceptAutoAssignedOrderTest` | the pre-fix guard → 1 of 5 red, 4 correctly green |
+| Network failure cleared the session | `refresh_token_offline_test.dart` | collapsing the enum → expected unreachable, was rejected |
+| Household member confirming a visit | `HouseholdMemberAuthorisationTest` | narrowing → 2 red; widening 5 more → `size: 1 but was: 6` |
+| *(new)* chain cannot build an empty database | `SchemaBuiltByFlywayOnlyTest` | reverting V1 to `SELECT 1` → the 1146 above |
+
+**Three of these are worth more than their row**, because they catch the next
+occurrence rather than this one:
+
+- `DateSerialisationTest` sweeps every date field on every DTO and entity by
+  reflection. Fixing `givenOn` fixes `givenOn`; the next date field on the next
+  DTO has the identical defect waiting and no test naming today's fields can
+  know about it.
+- `HouseholdMemberAuthorisationTest` counts the call sites of `canActFor` in the
+  source, because III.D.3 asks for a test that "fails loudly if a twenty-eighth
+  ever quietly opens" and no behavioural test can notice a check widened next
+  year in a method it has never heard of.
+- `task_construction_test.dart` compares the two places `Task` is built and
+  fails when the hand-built one is missing a field the model's parser sets —
+  which is precisely the "added in three places, forgotten in the fourth" shape.
+
+**Two tests deviate from what III.D.1 prescribes, both deliberately.** The
+unread badge uses 60 rather than 40, because `MAX_PAGE_SIZE` is 50 and forty
+would pass against a page-capped count — the number was reaching for "more than
+a page" and 40 no longer is. And the earnings tests get determinism from the
+calendar rather than the injected clock III.D.2 asks for: there is no `Clock` in
+this project (153 `now()` calls across 21 service files), so injecting one is a
+refactor, not a test. A month wholly in the past cannot contain a future day.
 
 The lesson from the first of those is worth keeping: **the fixture is the test.**
 Both nearby-jobs failures need a row to come back — an empty result set never
@@ -3447,11 +3481,30 @@ fallback — 16 tests, all passing, analyzer clean at `--fatal-infos`.
   floor is 0, so `0 > 0` excludes it. Unlikely with real GPS, reachable if an
   earner browses from a saved address that is also the job's address.
 
+### One more mistake of mine, and what it changed
+
+Test cleanup deleted rows from a hand-written list of tables. It was wrong four
+times — `location_state`, then `task_job`, then `notification`, then
+`household_member` — and each time the symptom was a foreign key violation in a
+test that had nothing to do with the missing table. There are **54 foreign-key
+columns pointing at `app_users` across some thirty tables**, two of them
+pointing at it twice, and one keyed on `USERNAME` rather than `ID`. A list that
+long, maintained by hand, is a list that is wrong.
+
+Cleanup now asks `information_schema` which columns reference `app_users` and
+clears every one, with foreign key checks off for the duration and restored in a
+`finally`. A table added next year is handled without anybody remembering. The
+same lesson applies to `scripts/reset.sql`, which is still a written list —
+worth converting the day it is wrong.
+
 ### Not done in this session
 
-Eight of the twelve III.D.1 rows: the `Slot` label guard, `givenOn`'s JSON shape,
-the earnings clock, the unread badge count, the hand-built `Task`, the
-auto-assigned order, the network-failure session, and the household-member
-authorisation matrix. The contract layer (~90 endpoints × 5 cases) and the
-Flutter golden flows are untouched, as is the meta-test for endpoints with no
-caller in the app.
+The contract layer proper (~90 endpoints × 5 cases each: happy path · wrong user
+· invalid input · not found · response shape) and the Flutter golden flows in
+`integration_test/`. The meta-test III.D.2 asks for — one that fails when an
+endpoint has no caller in the app — is also unwritten; §6.7's audit was manual
+and the drift will recur.
+
+The emulator work stays on the product owner's machine: this session had no
+`/dev/kvm`, so no Android emulator could run. Everything else — MySQL, Redis,
+the backend, both suites, the analyzer — ran on the server.

@@ -77,12 +77,16 @@ pins `[17,22)`.
 
 ## I.3 State of play
 
-**Phase 1 is partly done — see PLAN-3 §28.** The migration chain now builds a
+**Phase 1 is mostly done — see PLAN-3 §28.** The migration chain now builds a
 database from nothing (it could not, which blocked the whole phase), the
-Testcontainers harness exists, four of the twelve III.D.1 rows have regression
-tests, `scripts/seed.sql` + `reset.sql` work, and CI runs on both repositories.
-Outstanding: the other eight III.D.1 rows, the contract layer, and the Flutter
-golden flows.
+Testcontainers harness exists, **all twelve III.D.1 rows have a regression test,
+each verified by reintroducing the original defect**, `scripts/seed.sql` +
+`reset.sql` work, and CI runs on both repositories — green on the app, and on
+the backend pending one repository secret (`GH_PACKAGES_TOKEN`).
+
+Outstanding from Phase 1: the contract layer (~90 endpoints × 5 cases), the
+meta-test for endpoints with no caller in the app, and the Flutter golden flows
+in `integration_test/`. 41 backend tests and 27 app tests, all green.
 
 | Phase | State |
 |---|---|

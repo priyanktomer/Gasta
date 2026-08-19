@@ -734,6 +734,7 @@ Small, independent, safe to do in any gap. Detail in III.B.
 | **D-3 in-app payments** | Correctly out of scope | **Not** the same as Phase 4, which is a record, not a payment. |
 | **D-6 multi-tenancy** | Inert by choice | — |
 | **Random OTP** | Was deferred | Now Phase 2 — the launch blocker. |
+| **D-7 instant hire, posting side** | Deferred 2026-08-19 — **not in PLAN-5** | The accepting half is built and the posting half has no caller, so the flag is carried on every job payload for a feature nobody can create. Low and static: the endpoint is authenticated and organiser-scoped. Detail in DEFERRED.md D-7. |
 
 ## III.B Known issues, unfixed
 

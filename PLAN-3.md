@@ -3512,6 +3512,10 @@ expected answer. That leaves five, and two of them are real:
   delivered: the accepting side works and nothing can create the thing being
   accepted. This is the T7.1 / T7.5 / T7.6 shape exactly, and it is the reason
   this script exists.
+  → **Deferred by the product owner the same day, and deliberately not taken
+  into PLAN-5** — see DEFERRED.md D-7 and PLAN-5 §III.A. Finishing it needs a
+  product decision first (instant hire skips quoting, so it needs a price set up
+  front and a rule for who may take it), not just a screen.
 - **`/common/icon/**` is ready on both sides and used by neither.**
   `NameIconDto` already parses `iconName`, so the app understands the newer
   shape; `gasta.icons.inline=true` still inlines base64 SVGs, which the config's

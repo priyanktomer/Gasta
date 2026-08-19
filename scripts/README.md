@@ -5,6 +5,30 @@
 | `seed.sql` | A full dataset in one command — the fixture PLAN-5 Phase 1 step 3 asks for. |
 | `reset.sql` | Removes exactly what `seed.sql` created, and nothing else. |
 | `check-no-bom.sh` | Fails if any Java/Dart source carries a UTF-8 BOM. Now also run by CI in each code repository. |
+| `check-endpoint-callers.py` | Endpoints the backend serves that nothing in the app calls (PLAN-5 III.D.2). |
+
+## check-endpoint-callers.py
+
+```bash
+python3 scripts/check-endpoint-callers.py            # report
+python3 scripts/check-endpoint-callers.py --fail-on-orphans
+```
+
+III.D.2 asks for this by name — "a meta-test that fails when an endpoint has no
+caller in the app; §6.7's audit was manual and the drift will recur". Drift here
+is not tidiness: three of §7's features were built, verified, and reachable from
+no screen (T7.1 / T7.5 / T7.6), which is work paid for and not delivered. A
+server has no way to notice that nobody is calling.
+
+It is a script rather than a test because it needs both repositories at once and
+neither suite can see the other. Run it from the folder holding them as siblings.
+
+Endpoints under `/admin-user/`, `/super-user/` and `/common/health` are reported
+separately: the app is not their client, so "no caller" is the expected answer
+there and mixing them in is how a report becomes one nobody reads.
+
+**It cannot see a path the app assembles at runtime**, and it cannot know about a
+caller that is not this app. Treat a name in the output as a question.
 
 ## seed.sql / reset.sql
 

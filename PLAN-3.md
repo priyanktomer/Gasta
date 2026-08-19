@@ -3497,6 +3497,33 @@ clears every one, with foreign key checks off for the duration and restored in a
 same lesson applies to `scripts/reset.sql`, which is still a written list —
 worth converting the day it is wrong.
 
+### The endpoint audit, and two things it found
+
+III.D.2 asks for "a meta-test that fails when an endpoint has no caller in the
+app". That is now `scripts/check-endpoint-callers.py` — a script rather than a
+test, because it needs both repositories at once and neither suite can see the
+other. Today: **143 endpoints, 15 with no caller, of which 10 are ops surfaces**
+(`/admin-user/`, `/super-user/`, `/common/health`) where no app caller is the
+expected answer. That leaves five, and two of them are real:
+
+- **`/organiser/post-instant-job` cannot be called from anywhere.** The app
+  renders the `instantHire` flag, and `Constants.acceptInstantJob` exists so an
+  earner *can accept* one — but no screen posts one. Instant hire is half
+  delivered: the accepting side works and nothing can create the thing being
+  accepted. This is the T7.1 / T7.5 / T7.6 shape exactly, and it is the reason
+  this script exists.
+- **`/common/icon/**` is ready on both sides and used by neither.**
+  `NameIconDto` already parses `iconName`, so the app understands the newer
+  shape; `gasta.icons.inline=true` still inlines base64 SVGs, which the config's
+  own comment measures at roughly 600 KB on every launch. T11.13 built the
+  cheaper path and never switched to it. Flipping the flag is the whole change,
+  and on these networks 600 KB a launch is not a rounding error.
+
+The other three — `get-professions-by-category`, `get-professions-list-by-category`,
+`get-task-sub-professions` — appear nowhere in the app at all and look
+superseded, but that is a judgement for the product owner rather than a
+deletion to make unasked.
+
 ### Not done in this session
 
 The contract layer proper (~90 endpoints × 5 cases each: happy path · wrong user

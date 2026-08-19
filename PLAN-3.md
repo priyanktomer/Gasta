@@ -3528,13 +3528,49 @@ The other three — `get-professions-by-category`, `get-professions-list-by-cate
 superseded, but that is a judgement for the product owner rather than a
 deletion to make unasked.
 
+### The contract layer, and how much of it a sweep can be
+
+III.D.2 asks for a contract test per endpoint — ~90 of them, five cases each:
+happy path · wrong user · invalid input · not found · response date/enum shape.
+Roughly 700 tests written by hand, and most of them would assert the same thing
+about a different URL. Three of the five cases are the same check everywhere, so
+they are swept over every endpoint at once; the other two need per-endpoint
+fixtures and are still open.
+
+| Case | State |
+|---|---|
+| **wrong user** — anonymous | ✅ swept: every non-public endpoint, refused |
+| **wrong user** — wrong *authenticated* user | ◐ only where written by hand (household matrix, doorstep accept) |
+| **response date shape** | ✅ swept: every date field on every DTO and entity |
+| **response enum shape** | ✅ swept: every enum field, plus the global index switch |
+| **happy path** | ✗ needs a fixture per endpoint |
+| **invalid input** | ✗ |
+| **not found** | ✗ |
+
+Plus `X-Request-Id`, which §I.2 leans on for support and nothing was asserting.
+
+**The authentication sweep is worth its own paragraph, because of how it
+failed.** Widening the public antmatcher to `/api/v1/yapan/**` — the exact
+one-character-class mistake it exists to catch — opened every endpoint, and the
+opened endpoints did **not** return 200. They returned **500**: they tried to
+serve an anonymous caller and fell over reaching for a user that was not there.
+A sweep asserting only "nothing returns 200" would have stayed green with the
+entire API open. It fails on 5xx too, because a refusal by accident stops being
+a refusal the day somebody adds a null check.
+
+**And it caught me first.** The first version used `@AutoConfigureMockMvc`, under
+which *every* endpoint answered 401 — including `/common/health`, which a running
+server serves anonymously to a load balancer. The protected sweep passed while
+measuring nothing: it asserts nothing returns 200, and under MockMvc nothing
+could. The only reason that surfaced is that the file also asserts the public
+endpoints are **not** refused — a sweep needs a case that must fail, or it cannot
+tell "everything is fine" from "nothing is running".
+
 ### Not done in this session
 
-The contract layer proper (~90 endpoints × 5 cases each: happy path · wrong user
-· invalid input · not found · response shape) and the Flutter golden flows in
-`integration_test/`. The meta-test III.D.2 asks for — one that fails when an
-endpoint has no caller in the app — is also unwritten; §6.7's audit was manual
-and the drift will recur.
+The two contract cases a sweep cannot do — **happy path** and **invalid input**,
+plus **not found** — because each needs a fixture built for that endpoint. And
+the Flutter golden flows in `integration_test/`.
 
 The emulator work stays on the product owner's machine: this session had no
 `/dev/kvm`, so no Android emulator could run. Everything else — MySQL, Redis,

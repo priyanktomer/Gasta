@@ -84,9 +84,11 @@ each verified by reintroducing the original defect**, `scripts/seed.sql` +
 `reset.sql` work, and CI runs on both repositories — green on the app, and on
 the backend pending one repository secret (`GH_PACKAGES_TOKEN`).
 
-Outstanding from Phase 1: the contract layer (~90 endpoints × 5 cases), the
-meta-test for endpoints with no caller in the app, and the Flutter golden flows
-in `integration_test/`. 41 backend tests and 27 app tests, all green.
+Outstanding from Phase 1: three of the five contract cases — happy path,
+invalid input, not found — each of which needs a fixture per endpoint; and the
+Flutter golden flows in `integration_test/`. The other two cases (wrong user
+anonymous, response date/enum shape) are swept across every endpoint, as is
+`X-Request-Id`. **51 backend tests and 27 app tests, all green.**
 
 | Phase | State |
 |---|---|

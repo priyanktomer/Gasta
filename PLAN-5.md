@@ -77,6 +77,13 @@ pins `[17,22)`.
 
 ## I.3 State of play
 
+**Phase 1 is partly done — see PLAN-3 §28.** The migration chain now builds a
+database from nothing (it could not, which blocked the whole phase), the
+Testcontainers harness exists, four of the twelve III.D.1 rows have regression
+tests, `scripts/seed.sql` + `reset.sql` work, and CI runs on both repositories.
+Outstanding: the other eight III.D.1 rows, the contract layer, and the Flutter
+golden flows.
+
 | Phase | State |
 |---|---|
 | 0–4B | ✅ Complete |
@@ -186,7 +193,9 @@ flow and a tab change — all touching things that already broke once.
    `mvnw verify`. Free at this size. Migrations as their own step.
 
 **Verify.** Deliberately break something and watch the suite fail: revert V8's
-`ALTER` and confirm the doorstep-registration test goes red (rule 6).
+`ALTER` and confirm the doorstep-registration test goes red (rule 6). ✅ Done —
+it fails with `Column 'SERVICE_TYPE' cannot be null`, the original production
+error. Three other guards were proved the same way; see PLAN-3 §28.
 
 **Done when:** the twelve regression tests pass, `seed.sql` reproduces a full
 dataset in one command, CI is green on a push.

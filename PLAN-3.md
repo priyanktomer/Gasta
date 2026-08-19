@@ -3288,3 +3288,170 @@ and is verified, but there is no screen for it, so today the answer comes only
 from the sweep's default. That default is the safe one (release), so the gap
 costs an organiser the *option* to go ahead short-handed rather than costing
 anybody a day's wage. Worth building next; it is a notification with two buttons.
+
+---
+
+## 28. Phase 1 — a safety net, and the migration chain that could not build a database
+
+Phase 1 of PLAN-5. The goal was to make the following phases verifiable:
+integration tests against a real schema, a regression test per bug already
+found, reproducible seed data, CI. The first hour of it went somewhere else,
+because the first thing a test harness has to do is build a database, and this
+project could not.
+
+### The defect that had to be fixed before anything could be tested
+
+`V1__baseline.sql` was an intentional no-op — `SELECT 1` — on the reasoning that
+every existing database had been built by Hibernate's `ddl-auto=update`, so there
+was no authored DDL to replay. That reasoning was right. The comment then said:
+
+> a brand-new database gets this no-op followed by the same V2+ chain
+
+It does not, and never did. **Flyway runs before Hibernate touches the schema** —
+`FlywayMigrationInitializer` is a dependency of the `EntityManagerFactory`, which
+is the whole point of it, so migrations land first. Against an empty database V1
+did nothing and V2's very first statement then ran against tables nothing had
+created:
+
+```
+Error Code : 1146
+Message    : Table 'gasta.task_schedule' doesn't exist
+Location   : db/migration/V2__widen_enum_columns.sql
+```
+
+Only a database Hibernate had *already* built could be migrated. The consequences
+were larger than they look: no fresh database could be provisioned, CI could
+never build a schema from scratch, integration tests had nothing clean to run
+against, and `ddl-auto=validate` (PLAN-5 Phase 12) was unreachable — its own
+config comment asks for "every existing table's DDL captured first", which is
+exactly what was missing. It is also rule 4 again: a comment that disagrees with
+its code, the sixth in this project.
+
+Nothing had ever reported it, because the application starts every day on a
+machine whose database was built by Hibernate months ago.
+
+**V1 now carries the real DDL** — the 39 tables as Hibernate builds them,
+captured by `mysqldump --no-data` from a clean run, so schema and entities agree
+by construction rather than by anybody's memory.
+
+**Rewriting an applied migration is exactly what `db/README.md` forbids**, so the
+safety of doing it to V1 specifically was proved rather than assumed. A
+pre-Flyway database was rebuilt from scratch — Hibernate with Flyway off, then
+Flyway switched on — and its history row is:
+
+```
+version=1  description="<< Flyway Baseline >>"  type=BASELINE  checksum=NULL
+```
+
+`type=BASELINE` with a **NULL checksum**: an existing database never reads or
+checksums the V1 file. V5's checksum was identical before and after
+(`-2129198019`). Databases in the field see no change at all.
+
+### A second layer of the same problem
+
+With V1 fixed, the chain got to V5 and died there:
+
+```
+Error Code : 1048
+Message    : Column 'UPDATED_BY' cannot be null
+```
+
+V5 inserts two catalog professions and fills their NOT NULL `UPDATED_BY` audit
+column from `(SELECT MIN(ID) FROM app_users)`. On a database in use that is the
+first real user. On an empty one there are no users, so it is NULL.
+
+V5 could not be edited — applied in the field, and `db/README.md` is explicit —
+so the fix went into V1, the one file an existing database provably never
+re-reads: **one disabled, non-loginable audit actor**, mirroring
+`ManagedEarnerServiceImpl.createPlaceholder` exactly (username that is not a
+phone number so no lookup by phone reaches it, `ENABLED = 0`, no row in `users`,
+no OTP path). An audit column that is NOT NULL with a foreign key has no other
+truthful answer on an empty database, and making it nullable instead would leave
+a fresh schema differing from every existing one.
+
+**Worth a decision from the product owner**, since it is the one thing here that
+adds a row to a real table rather than only to tests.
+
+### What the catalog turns out to be
+
+Searching for where professions come from: `INSERT INTO profession` appears in
+exactly one place in the whole backend, V5. **The base catalog — professions,
+sub-professions, service variants, states, serviceable areas — exists in no
+migration and no file.** It lives only in databases that have been in use, seeded
+by hand at some point in the past and never written down. A fresh production
+deployment would come up with an empty catalog, and there is nothing to restore
+it from. Not fixed here; it is a bigger decision than Phase 1, and it is why
+`scripts/reset.sql` deletes by ownership rather than dropping the schema.
+
+### The tests
+
+`SchemaBuiltByFlywayOnlyTest` is the one that matters most. Every other
+integration test runs with `ddl-auto=update`, exactly as the application does —
+so Hibernate silently creates whatever Flyway failed to, and **a suite can stay
+green while the chain is broken**, which is precisely how this defect survived.
+So it builds its own schema that nothing but Flyway has touched, and runs
+`ddl-auto=validate` so Hibernate must check and may not repair. That passing is
+Phase 12's gate, now standing rather than assumed.
+
+Against III.D.1, this session covers four of the twelve rows, all verified by
+reintroducing the original bug and watching the test go red (rule 6):
+
+| Row | Test | Proved by |
+|---|---|---|
+| `COALESCE` on a BIT → BigDecimal projection | `NearbyJobQueryTest` | `Cannot project java.math.BigDecimal to java.lang.Boolean` |
+| `t.INSTANT_HIRE` — column does not exist | `NearbyJobQueryTest` | `Unknown column 't.INSTANT_HIRE'` |
+| `SERVICE_TYPE` NOT NULL vs null-writing entity ×2 | `DoorstepRegistrationTest` | reverting V8's `ALTER` → `Column 'SERVICE_TYPE' cannot be null` |
+| (new) chain cannot build an empty database | `SchemaBuiltByFlywayOnlyTest` | reverting V1 to `SELECT 1` → the 1146 above |
+
+The lesson from the first of those is worth keeping: **the fixture is the test.**
+Both nearby-jobs failures need a row to come back — an empty result set never
+projects anything — so the same test against an empty database passes while the
+query is broken.
+
+### The Flutter side
+
+`test/widget_test.dart` — one of the two test files in the entire product — was
+the untouched `flutter create` counter template, asserting on a counter this app
+does not have. **It had never passed.** `flutter analyze` reported "No issues
+found!" throughout, because a test that fails is still a test that compiles.
+
+Replaced with the `ApiState` tests Phase 1 step 4 asks for (the four states, and
+that only those four are representable) and `CacheService` tests for the offline
+fallback — 16 tests, all passing, analyzer clean at `--fatal-infos`.
+
+### Two things I broke myself, both instructive
+
+1. **A pom change that took the JDBC driver off the runtime classpath.** Declaring
+   `mysql-connector-j` at `<scope>test</scope>` made Maven's nearest-wins
+   mediation override the transitive runtime one. The full suite still passed and
+   the application stopped starting with "Failed to load driver class
+   com.mysql.cj.jdbc.Driver". Rule 1, catching me instead of the codebase.
+2. **Cleanup keyed on a text marker.** The test fixture deleted its rows by title
+   and name. That works until the fixture changes shape — then the previous run's
+   rows no longer match, still point at the users being deleted, and every test in
+   the class fails on a foreign key naming a table nobody edited. Cleanup is keyed
+   on ownership now. The same mistake then repeated itself in `seed.sql` via
+   `location_state.UPDATED_BY`, which is why reference data there is attributed to
+   the system actor and not to a seeded user.
+
+### Also found, not acted on
+
+- **PLAN-5 Phase 5's numbers do not match the repository.** It says `app_en.arb`
+  has 183 strings and `app_hi.arb` 104, i.e. Hindi at 57%. The files have **69
+  message keys each** — Hindi covers 100% of what has been extracted. The real
+  gap is different and larger: ~83 hardcoded `Text('…')` literals across 39
+  screens that were never extracted to ARB at all. Phase 5 is extraction work,
+  not translation work, and its brief should say so.
+- **A job at exactly the coordinates being searched from is invisible.** The
+  nearby-jobs query ends `HAVING distanceKm > :minDistance` and the widest band's
+  floor is 0, so `0 > 0` excludes it. Unlikely with real GPS, reachable if an
+  earner browses from a saved address that is also the job's address.
+
+### Not done in this session
+
+Eight of the twelve III.D.1 rows: the `Slot` label guard, `givenOn`'s JSON shape,
+the earnings clock, the unread badge count, the hand-built `Task`, the
+auto-assigned order, the network-failure session, and the household-member
+authorisation matrix. The contract layer (~90 endpoints × 5 cases) and the
+Flutter golden flows are untouched, as is the meta-test for endpoints with no
+caller in the app.

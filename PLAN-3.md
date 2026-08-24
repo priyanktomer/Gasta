@@ -3289,7 +3289,359 @@ from the sweep's default. That default is the safe one (release), so the gap
 costs an organiser the *option* to go ahead short-handed rather than costing
 anybody a day's wage. Worth building next; it is a notification with two buttons.
 
-## 28. The Jackson floor that was not a floor (D-5 / T11.7)
+---
+
+## 28. Phase 1 — a safety net, and the migration chain that could not build a database
+
+Phase 1 of PLAN-5. The goal was to make the following phases verifiable:
+integration tests against a real schema, a regression test per bug already
+found, reproducible seed data, CI. The first hour of it went somewhere else,
+because the first thing a test harness has to do is build a database, and this
+project could not.
+
+### The defect that had to be fixed before anything could be tested
+
+`V1__baseline.sql` was an intentional no-op — `SELECT 1` — on the reasoning that
+every existing database had been built by Hibernate's `ddl-auto=update`, so there
+was no authored DDL to replay. That reasoning was right. The comment then said:
+
+> a brand-new database gets this no-op followed by the same V2+ chain
+
+It does not, and never did. **Flyway runs before Hibernate touches the schema** —
+`FlywayMigrationInitializer` is a dependency of the `EntityManagerFactory`, which
+is the whole point of it, so migrations land first. Against an empty database V1
+did nothing and V2's very first statement then ran against tables nothing had
+created:
+
+```
+Error Code : 1146
+Message    : Table 'gasta.task_schedule' doesn't exist
+Location   : db/migration/V2__widen_enum_columns.sql
+```
+
+Only a database Hibernate had *already* built could be migrated. The consequences
+were larger than they look: no fresh database could be provisioned, CI could
+never build a schema from scratch, integration tests had nothing clean to run
+against, and `ddl-auto=validate` (PLAN-5 Phase 12) was unreachable — its own
+config comment asks for "every existing table's DDL captured first", which is
+exactly what was missing. It is also rule 4 again: a comment that disagrees with
+its code, the sixth in this project.
+
+Nothing had ever reported it, because the application starts every day on a
+machine whose database was built by Hibernate months ago.
+
+**V1 now carries the real DDL** — the 39 tables as Hibernate builds them,
+captured by `mysqldump --no-data` from a clean run, so schema and entities agree
+by construction rather than by anybody's memory.
+
+**Rewriting an applied migration is exactly what `db/README.md` forbids**, so the
+safety of doing it to V1 specifically was proved rather than assumed. A
+pre-Flyway database was rebuilt from scratch — Hibernate with Flyway off, then
+Flyway switched on — and its history row is:
+
+```
+version=1  description="<< Flyway Baseline >>"  type=BASELINE  checksum=NULL
+```
+
+`type=BASELINE` with a **NULL checksum**: an existing database never reads or
+checksums the V1 file. V5's checksum was identical before and after
+(`-2129198019`). Databases in the field see no change at all.
+
+### A second layer of the same problem
+
+With V1 fixed, the chain got to V5 and died there:
+
+```
+Error Code : 1048
+Message    : Column 'UPDATED_BY' cannot be null
+```
+
+V5 inserts two catalog professions and fills their NOT NULL `UPDATED_BY` audit
+column from `(SELECT MIN(ID) FROM app_users)`. On a database in use that is the
+first real user. On an empty one there are no users, so it is NULL.
+
+V5 could not be edited — applied in the field, and `db/README.md` is explicit —
+so the fix went into V1, the one file an existing database provably never
+re-reads: **one disabled, non-loginable audit actor**, mirroring
+`ManagedEarnerServiceImpl.createPlaceholder` exactly (username that is not a
+phone number so no lookup by phone reaches it, `ENABLED = 0`, no row in `users`,
+no OTP path). An audit column that is NOT NULL with a foreign key has no other
+truthful answer on an empty database, and making it nullable instead would leave
+a fresh schema differing from every existing one.
+
+**Worth a decision from the product owner**, since it is the one thing here that
+adds a row to a real table rather than only to tests.
+
+### What the catalog turns out to be
+
+Searching for where professions come from: `INSERT INTO profession` appears in
+exactly one place in the whole backend, V5. **The base catalog — professions,
+sub-professions, service variants, states, serviceable areas — exists in no
+migration and no file.** It lives only in databases that have been in use, seeded
+by hand at some point in the past and never written down. A fresh production
+deployment would come up with an empty catalog, and there is nothing to restore
+it from. Not fixed here; it is a bigger decision than Phase 1, and it is why
+`scripts/reset.sql` deletes by ownership rather than dropping the schema.
+
+### The tests
+
+`SchemaBuiltByFlywayOnlyTest` is the one that matters most. Every other
+integration test runs with `ddl-auto=update`, exactly as the application does —
+so Hibernate silently creates whatever Flyway failed to, and **a suite can stay
+green while the chain is broken**, which is precisely how this defect survived.
+So it builds its own schema that nothing but Flyway has touched, and runs
+`ddl-auto=validate` so Hibernate must check and may not repair. That passing is
+Phase 12's gate, now standing rather than assumed.
+
+**All twelve III.D.1 rows now have a regression test**, and every one was
+verified by reintroducing the original defect and watching it go red (rule 6).
+A test that has never failed is not known to work, so none of these are taken on
+trust:
+
+| Row | Test | Proved by reintroducing the bug |
+|---|---|---|
+| `COALESCE` on a BIT → BigDecimal projection | `NearbyJobQueryTest` | `Cannot project java.math.BigDecimal to java.lang.Boolean` |
+| `t.INSTANT_HIRE` — column does not exist | `NearbyJobQueryTest` | `Unknown column 't.INSTANT_HIRE'` |
+| `SERVICE_TYPE` NOT NULL vs a null-writing entity (×2) | `DoorstepRegistrationTest` | reverting V8's `ALTER` → `Column 'SERVICE_TYPE' cannot be null` |
+| `findByActive…AndCrewAllOrNothing` — context loads | every `@SpringBootTest` in the suite | a context that will not start fails all of them |
+| Three `Slot` labels 4–16 hours wrong | `SlotLabelTest` | the enum's own message, naming both strings |
+| `givenOn` serialised as `[2026,8,10]` | `DateSerialisationTest` | flipping `write-dates-as-timestamps` → seven fields named |
+| Earnings counted past-dated visits as future income | `EarningsPastAndFutureTest` | removing the past-date branch → 3 of 4 red |
+| Unread badge counted one page, not the total | `UnreadNotificationCountTest` | capping the count → expected 60, was 50 |
+| `crewAllOrNothing` lost to a hand-built `Task` | `task_construction_test.dart` | deleting the line → `Actual: Set:['crewAllOrNothing']` |
+| Auto-assigned order acceptable by nobody | `AcceptAutoAssignedOrderTest` | the pre-fix guard → 1 of 5 red, 4 correctly green |
+| Network failure cleared the session | `refresh_token_offline_test.dart` | collapsing the enum → expected unreachable, was rejected |
+| Household member confirming a visit | `HouseholdMemberAuthorisationTest` | narrowing → 2 red; widening 5 more → `size: 1 but was: 6` |
+| *(new)* chain cannot build an empty database | `SchemaBuiltByFlywayOnlyTest` | reverting V1 to `SELECT 1` → the 1146 above |
+
+**Three of these are worth more than their row**, because they catch the next
+occurrence rather than this one:
+
+- `DateSerialisationTest` sweeps every date field on every DTO and entity by
+  reflection. Fixing `givenOn` fixes `givenOn`; the next date field on the next
+  DTO has the identical defect waiting and no test naming today's fields can
+  know about it.
+- `HouseholdMemberAuthorisationTest` counts the call sites of `canActFor` in the
+  source, because III.D.3 asks for a test that "fails loudly if a twenty-eighth
+  ever quietly opens" and no behavioural test can notice a check widened next
+  year in a method it has never heard of.
+- `task_construction_test.dart` compares the two places `Task` is built and
+  fails when the hand-built one is missing a field the model's parser sets —
+  which is precisely the "added in three places, forgotten in the fourth" shape.
+
+**Two tests deviate from what III.D.1 prescribes, both deliberately.** The
+unread badge uses 60 rather than 40, because `MAX_PAGE_SIZE` is 50 and forty
+would pass against a page-capped count — the number was reaching for "more than
+a page" and 40 no longer is. And the earnings tests get determinism from the
+calendar rather than the injected clock III.D.2 asks for: there is no `Clock` in
+this project (153 `now()` calls across 21 service files), so injecting one is a
+refactor, not a test. A month wholly in the past cannot contain a future day.
+
+The lesson from the first of those is worth keeping: **the fixture is the test.**
+Both nearby-jobs failures need a row to come back — an empty result set never
+projects anything — so the same test against an empty database passes while the
+query is broken.
+
+### The Flutter side
+
+`test/widget_test.dart` — one of the two test files in the entire product — was
+the untouched `flutter create` counter template, asserting on a counter this app
+does not have. **It had never passed.** `flutter analyze` reported "No issues
+found!" throughout, because a test that fails is still a test that compiles.
+
+Replaced with the `ApiState` tests Phase 1 step 4 asks for (the four states, and
+that only those four are representable) and `CacheService` tests for the offline
+fallback — 16 tests, all passing, analyzer clean at `--fatal-infos`.
+
+### Two things I broke myself, both instructive
+
+1. **A pom change that took the JDBC driver off the runtime classpath.** Declaring
+   `mysql-connector-j` at `<scope>test</scope>` made Maven's nearest-wins
+   mediation override the transitive runtime one. The full suite still passed and
+   the application stopped starting with "Failed to load driver class
+   com.mysql.cj.jdbc.Driver". Rule 1, catching me instead of the codebase.
+2. **Cleanup keyed on a text marker.** The test fixture deleted its rows by title
+   and name. That works until the fixture changes shape — then the previous run's
+   rows no longer match, still point at the users being deleted, and every test in
+   the class fails on a foreign key naming a table nobody edited. Cleanup is keyed
+   on ownership now. The same mistake then repeated itself in `seed.sql` via
+   `location_state.UPDATED_BY`, which is why reference data there is attributed to
+   the system actor and not to a seeded user.
+
+### Also found, not acted on
+
+- **PLAN-5 Phase 5's numbers do not match the repository.** It says `app_en.arb`
+  has 183 strings and `app_hi.arb` 104, i.e. Hindi at 57%. The files have **69
+  message keys each** — Hindi covers 100% of what has been extracted. The real
+  gap is different and larger: ~83 hardcoded `Text('…')` literals across 39
+  screens that were never extracted to ARB at all. Phase 5 is extraction work,
+  not translation work, and its brief should say so.
+- **A job at exactly the coordinates being searched from is invisible.** The
+  nearby-jobs query ends `HAVING distanceKm > :minDistance` and the widest band's
+  floor is 0, so `0 > 0` excludes it. Unlikely with real GPS, reachable if an
+  earner browses from a saved address that is also the job's address.
+
+### One more mistake of mine, and what it changed
+
+Test cleanup deleted rows from a hand-written list of tables. It was wrong four
+times — `location_state`, then `task_job`, then `notification`, then
+`household_member` — and each time the symptom was a foreign key violation in a
+test that had nothing to do with the missing table. There are **54 foreign-key
+columns pointing at `app_users` across some thirty tables**, two of them
+pointing at it twice, and one keyed on `USERNAME` rather than `ID`. A list that
+long, maintained by hand, is a list that is wrong.
+
+Cleanup now asks `information_schema` which columns reference `app_users` and
+clears every one, with foreign key checks off for the duration and restored in a
+`finally`. A table added next year is handled without anybody remembering. The
+same lesson applies to `scripts/reset.sql`, which is still a written list —
+worth converting the day it is wrong.
+
+### The endpoint audit, and two things it found
+
+III.D.2 asks for "a meta-test that fails when an endpoint has no caller in the
+app". That is now `scripts/check-endpoint-callers.py` — a script rather than a
+test, because it needs both repositories at once and neither suite can see the
+other. Today: **143 endpoints, 15 with no caller, of which 10 are ops surfaces**
+(`/admin-user/`, `/super-user/`, `/common/health`) where no app caller is the
+expected answer. That leaves five, and two of them are real:
+
+- **`/organiser/post-instant-job` cannot be called from anywhere.** The app
+  renders the `instantHire` flag, and `Constants.acceptInstantJob` exists so an
+  earner *can accept* one — but no screen posts one. Instant hire is half
+  delivered: the accepting side works and nothing can create the thing being
+  accepted. This is the T7.1 / T7.5 / T7.6 shape exactly, and it is the reason
+  this script exists.
+  → **Deferred by the product owner the same day, and deliberately not taken
+  into PLAN-5** — see DEFERRED.md D-7 and PLAN-5 §III.A. Finishing it needs a
+  product decision first (instant hire skips quoting, so it needs a price set up
+  front and a rule for who may take it), not just a screen.
+- **`/common/icon/**` is ready on both sides and used by neither.**
+  `NameIconDto` already parses `iconName`, so the app understands the newer
+  shape; `gasta.icons.inline=true` still inlines base64 SVGs, which the config's
+  own comment measures at roughly 600 KB on every launch. T11.13 built the
+  cheaper path and never switched to it. Flipping the flag is the whole change,
+  and on these networks 600 KB a launch is not a rounding error.
+
+The other three — `get-professions-by-category`, `get-professions-list-by-category`,
+`get-task-sub-professions` — appear nowhere in the app at all and look
+superseded, but that is a judgement for the product owner rather than a
+deletion to make unasked.
+
+### The contract layer, and how much of it a sweep can be
+
+III.D.2 asks for a contract test per endpoint — ~90 of them, five cases each:
+happy path · wrong user · invalid input · not found · response date/enum shape.
+Roughly 700 tests written by hand, and most of them would assert the same thing
+about a different URL. Three of the five cases are the same check everywhere, so
+they are swept over every endpoint at once; the other two need per-endpoint
+fixtures and are still open.
+
+| Case | State |
+|---|---|
+| **wrong user** — anonymous | ✅ swept: every non-public endpoint, refused |
+| **wrong user** — wrong *authenticated* user | ◐ only where written by hand (household matrix, doorstep accept) |
+| **response date shape** | ✅ swept: every date field on every DTO and entity |
+| **response enum shape** | ✅ swept: every enum field, plus the global index switch |
+| **invalid input** | ✅ swept: every write endpoint, signed in, empty body |
+| **happy path** | ◐ sign-up → token → read; post a job → an earner finds it |
+| **not found** | ◐ swept incidentally — the invalid-input sweep uses an id that does not exist |
+
+### Six defects the invalid-input sweep found, all fixed
+
+The sweep signs a real user up over HTTP and sends `{}` to every write endpoint.
+The rule is narrow and worth stating exactly: **the server may refuse anything it
+likes, but it must refuse on purpose.** Five endpoints did not.
+
+| Endpoint | Was | Cause |
+|---|---|---|
+| `get-nearby-jobs` | 500 `Cannot invoke "String.trim()" because "in" is null` | `@RequestBody` with no `@Valid`, DTO with no constraints |
+| `post-new-job` | 500 `Cannot parse null string` | same |
+| `post-instant-job` | 500 `Cannot parse null string` | same |
+| `provider/register` | 500 `Something went wrong` | **had `@Valid`**, on a DTO with nothing to check |
+| `refresh-token` | 500 `Could not refresh token` | null token pair passed into `access-app`, threw there |
+
+`provider/register` is the sharper lesson: `@Valid` on a class with no
+constraints is a check that cannot fail, and in review it reads as though
+validation is handled.
+
+Constraints were added **only to fields the code dereferences unconditionally**
+— `Double.parseDouble` on the coordinates, `Long.parseLong` on `addressId`,
+`findById` on `professionId`. That reasoning is what makes the change safe:
+requiring a field can only narrow what is accepted, and every request now
+refused with a 400 was previously getting a 500, so no working flow can break.
+
+`refresh-token` is not validation. The app cannot tell a 500 from a genuine
+rejection — `refreshAuthToken` maps every non-connection failure to
+`rejected` — so a malformed request looked exactly like "the server says your
+session is over", and cleared it. It answers 401 now.
+
+**The sixth is the one to read.** `register-interest` answered **200** to an
+empty body and *saved* a `ServiceInterest` with a null place and a null
+profession. That table is the only demand signal this product gets for free
+(T8.4), and it is deliberately not deduplicated — because ten people from one
+village is a stronger signal than one. Junk rows there do not waste space; they
+inflate the number somebody will use to decide where to start work. It was found
+only because the sweep has a second test asserting endpoints do **not** accept an
+empty body, which is the same lesson as the authentication sweep: a sweep needs a
+case that must fail.
+
+Five endpoints legitimately accept an empty body and are allowlisted with a
+reason each. The clearest is `safety-alert`, where the controller already says
+one tap has to be enough for somebody standing in a stranger's house unable to
+speak — requiring a field there would be the bug.
+
+### Signing in for real, and the trap in it
+
+`ApiClient` signs a test user up through the front door and keeps their tokens,
+so a happy path goes through the filter chain, the token, the JSON and the status
+code rather than around them. It works because `access-app-otp` is not "Yapan",
+so `OtpServiceImpl` returns a fixed `000000`. **Phase 2 removes that property**,
+and the helper says so in its own comment: when a real SMS provider lands this
+must move to whatever development bypass replaces it, and the day the constant
+disappears these tests fail loudly rather than silently signing nobody in.
+
+The trap is the throttle. Three Redis keys, and the third is the one that bites:
+`gasta-rate:otp-ip:127.0.0.1` is shared by **every test in the suite**, because
+they all come from loopback, and it allows forty an hour. A suite that signs in
+forty-one times starts failing at whichever test happens to be forty-first — and
+that test moves as tests are added. The counters outlive the run, so the seventh
+run of a signing-in file within an hour fails with "We have already sent a few
+codes to this number": a real guard doing its job, reported as a broken test.
+Cleared in setup, never relaxed (Phase 2: "Don't relax the rate limits").
+
+Plus `X-Request-Id`, which §I.2 leans on for support and nothing was asserting.
+
+**The authentication sweep is worth its own paragraph, because of how it
+failed.** Widening the public antmatcher to `/api/v1/yapan/**` — the exact
+one-character-class mistake it exists to catch — opened every endpoint, and the
+opened endpoints did **not** return 200. They returned **500**: they tried to
+serve an anonymous caller and fell over reaching for a user that was not there.
+A sweep asserting only "nothing returns 200" would have stayed green with the
+entire API open. It fails on 5xx too, because a refusal by accident stops being
+a refusal the day somebody adds a null check.
+
+**And it caught me first.** The first version used `@AutoConfigureMockMvc`, under
+which *every* endpoint answered 401 — including `/common/health`, which a running
+server serves anonymously to a load balancer. The protected sweep passed while
+measuring nothing: it asserts nothing returns 200, and under MockMvc nothing
+could. The only reason that surfaced is that the file also asserts the public
+endpoints are **not** refused — a sweep needs a case that must fail, or it cannot
+tell "everything is fine" from "nothing is running".
+
+### Not done in this session
+
+**Per-endpoint happy paths beyond the two golden flows written** — each needs a
+fixture built for that endpoint, and the two that exist (sign-up, and post a job
+→ an earner finds it) are the ones everything else depends on. **The wrong
+*authenticated* user case** is still only covered where it was written by hand.
+And the Flutter golden flows in `integration_test/`, which need a device.
+
+The emulator work stays on the product owner's machine: this session had no
+`/dev/kvm`, so no Android emulator could run. Everything else — MySQL, Redis,
+the backend, both suites, the analyzer — ran on the server.
+
+## 29. The Jackson floor that was not a floor (D-5 / T11.7)
 
 PLAN-3 §20 added this to `application.properties`, with a comment calling it
 "the floor for the ones that do not [carry `@JsonFormat`], including fields not

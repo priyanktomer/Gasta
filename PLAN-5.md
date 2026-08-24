@@ -77,6 +77,24 @@ pins `[17,22)`.
 
 ## I.3 State of play
 
+**Phase 1 is mostly done — see PLAN-3 §28.** The migration chain now builds a
+database from nothing (it could not, which blocked the whole phase), the
+Testcontainers harness exists, **all twelve III.D.1 rows have a regression test,
+each verified by reintroducing the original defect**, `scripts/seed.sql` +
+`reset.sql` work, and CI runs on both repositories — green on the app, and on
+the backend pending one repository secret (`GH_PACKAGES_TOKEN`).
+
+Four of the five contract cases are now swept across every endpoint — anonymous
+access, invalid input, and response date and enum shape — plus `X-Request-Id`,
+and two golden flows go through the real front door with real tokens. **The
+invalid-input sweep found six defects, all fixed** (PLAN-3 §28), including
+`register-interest` silently saving an empty row into the demand-signal table.
+
+Outstanding from Phase 1: per-endpoint happy paths beyond the two written, the
+wrong-*authenticated*-user case where it is not hand-written, and the Flutter
+golden flows in `integration_test/`, which need a device. **60 backend tests and
+27 app tests, all green.**
+
 | Phase | State |
 |---|---|
 | 0–4B | ✅ Complete |
@@ -91,8 +109,12 @@ pins `[17,22)`.
 | §F — Design system | ✅ Adopted |
 | §G — Success gaps | ◐ §7.6 blocked, §7.8 handover → Phase 13 |
 
-**Nothing is half-built.** Everything touched last session was finished and
-verified, or deliberately not started with the reason written down.
+**Phase 1 is done and merged** (2026-08-24) — 60 backend + 27 app tests, CI on
+both repos, seed data, and a migration chain that can finally build a database
+from nothing. Start at **Phase 2**.
+
+**Nothing is half-built.** Everything touched is finished and verified, or
+deliberately not started with the reason written down.
 
 ## I.4 Where things live
 
@@ -151,44 +173,47 @@ and the lawyer is briefed.
 
 ## Phase 1 — A safety net before the next feature
 
-> ### ⚠️ Most of this already exists on a branch — read before redoing it
+> ### ✅ Phase 1 is merged — do not redo it
 >
-> A cloud session implemented Phase 1 on **`claude/plan-5-implementation-ql0oft`**
-> (the same branch name in all three repos). **`main` is untouched.** Reviewed
-> 2026-08-24; the work is good and should be brought in rather than repeated.
+> A cloud session implemented this on `claude/plan-5-implementation-ql0oft`;
+> reviewed, fixed and **merged into `main` in all three repos on 2026-08-24**.
+> **60 backend tests and 27 app tests, all green**, run offline on the dev
+> machine.
 >
-> **What is on it**
+> **What landed:** a Testcontainers harness (MySQL + Redis), a regression test
+> for each of the twelve III.D.1 defects, contract sweeps for anonymous access /
+> invalid input / response date and enum shape, `scripts/seed.sql` + `reset.sql`,
+> `scripts/check-endpoint-callers.py` (the III.D.2 meta-test), CI on both repos,
+> and six validation fixes the invalid-input sweep found. PLAN-3 §28 has the
+> detail.
 >
-> | Part | Risk | Note |
-> |---|---|---|
-> | `scripts/seed.sql`, `reset.sql`, `README.md`, `check-endpoint-callers.py` | none | Pure additions. The caller script is the III.D.2 meta-test. |
-> | Backend `src/test/**`, app `test/*.dart`, CI for both repos | none | Additions only, plus deleting the `widget_test.dart` stub. 60 backend + 27 app tests. |
-> | **`V1__baseline.sql` rewritten** (+878 lines) | **verified safe here** | See below — this is the important one. |
-> | `LoginServiceImpl.refreshToken` — 500 → 401 when no tokens on the request | low, and a real fix | A malformed request returned 500, and the app maps every non-200 that is not a connection failure to `RefreshResult.rejected` — so it **looked like "your session is over" and cleared it**. Same family as the offline-logout bug. |
-> | 6 validation fixes (DTO constraints, 2 controllers, `ServiceabilityServiceImpl`) | low | Found by an invalid-input sweep; each was previously a 500. |
+> **The headline was `V1__baseline.sql`.** It was a no-op (`SELECT 1`) on the
+> reasoning that Hibernate had built every existing database — but **Flyway runs
+> before Hibernate**, so against an empty database V2's first statement hit a
+> table nothing had created (`Table 'gasta.task_schedule' doesn't exist`). **No
+> fresh database could ever be provisioned**, which is why CI and Testcontainers
+> were impossible and why `ddl-auto=validate` (Phase 11) was unreachable. Editing
+> an applied migration normally breaks existing databases; checked first — this
+> database's V1 row is a Flyway `BASELINE` with a **NULL checksum**, so it is
+> neither validated nor re-run. Confirmed after merging: *"Successfully validated
+> 10 migrations"* and the backend starts against the existing database.
 >
-> **The V1 rewrite is the headline, and it is a real find.** V1 was a no-op
-> (`SELECT 1`) on the reasoning that Hibernate had built every existing database.
-> But **Flyway runs before Hibernate**, so against an *empty* database V1 did
-> nothing and V2's first statement hit a table that did not exist —
-> `Table 'gasta.task_schedule' doesn't exist`. **No fresh database could ever be
-> provisioned**, which is why CI and Testcontainers were impossible, and why
-> `ddl-auto=validate` (Phase 11) was unreachable.
+> **Three things needed fixing that CI did not surface**, all worth knowing:
+> - `SchemaBuiltByFlywayOnlyTest` could not create its schema —
+>   `MySQLContainer` grants its application user rights on one database only
+>   (*"Access denied for user 'gasta'@'%'"*). `IntegrationTestBase` now exposes an
+>   admin account and grants the app user on the new schema.
+> - **Testcontainers was not in the local `~/.m2`** and the build runs offline.
+>   Cached now, so `mvnw -o test` works — but remember this the next time a
+>   dependency is added.
+> - A **flaky** app test: the TTL case wrote through `CacheService` then read with
+>   `ttl: Duration.zero`, and `0 > 0` is false, so it passed alone and failed in
+>   the full suite. It now writes the saved-at stamp two hours into the past.
 >
-> **Editing an applied migration normally breaks existing databases** — our own
-> conventions forbid it. Checked here: this machine's `flyway_schema_history` row
-> for V1 is `<< Flyway Baseline >>` with a **NULL checksum**, so Flyway neither
-> validates nor re-runs it. **Safe for this database; only fresh ones are
-> affected** — which is the entire point. Re-check this on any other environment
-> before merging there.
->
-> **They come as a unit.** The tests need the V1 fix and the `pom.xml`
-> Testcontainers additions to run at all, so this is not "take the tests, leave
-> the migration".
->
-> **Merge checklist:** run the backend suite; run the app on the emulator and walk
-> the register, an advance and a doorstep order; confirm the backend still starts
-> against the *existing* database (not just a container). Then merge.
+> **Still outstanding from Phase 1:** per-endpoint happy paths beyond the two
+> written, the wrong-*authenticated*-user case where it is not hand-written, and
+> the Flutter golden flows in `integration_test/` — which need a device, so they
+> belong to a local session, not a cloud one.
 
 **Goal.** Make the following phases verifiable: integration tests against
 a real schema, a regression test per bug already found, reproducible seed data,
@@ -229,7 +254,9 @@ flow and a tab change — all touching things that already broke once.
    `mvnw verify`. Free at this size. Migrations as their own step.
 
 **Verify.** Deliberately break something and watch the suite fail: revert V8's
-`ALTER` and confirm the doorstep-registration test goes red (rule 6).
+`ALTER` and confirm the doorstep-registration test goes red (rule 6). ✅ Done —
+it fails with `Column 'SERVICE_TYPE' cannot be null`, the original production
+error. Three other guards were proved the same way; see PLAN-3 §28.
 
 **Done when:** the twelve regression tests pass, `seed.sql` reproduces a full
 dataset in one command, CI is green on a push.
@@ -783,12 +810,13 @@ Small, independent, safe to do in any gap. Detail in III.B.
 | Item | Decision | Exposure if left |
 |---|---|---|
 | **T5.7 identity recovery** | Keep deferred (re-asked 2026-08-17) | **An earner who loses their phone loses everything** — work record, ratings, engagements — with no route back. Ops can rescue one user by hand; it does not scale. The cheap half (phone change verified through the old number) is still worth taking. |
-| **T11.7 `access-app` changes** | Leave it | Anything Gasta wants *on a user* goes in a side table (`UserReputation`, `EarnerPreference` already do). Cost paid slowly in joins. Revisit only if *authentication behaviour itself* must change — no side table reaches that. |
+| **T11.7 / D-5 `mysql-multitenancy` changes** | Leave the library alone — fix at config level | ⚠️ **This was recorded as `access-app` in PLAN-4 §6.3 and in earlier drafts here. Wrong library.** D-5 is about `mysql-multitenancy`, whose `MvcConfig` carries `@EnableWebMvc` — which makes `spring.mvc.*` and `spring.jackson.*` **inert**. That is not theoretical: it silently disabled the date-serialisation floor added in §20, found and fixed 2026-08-24 (PLAN-3 §29, `JacksonWebConfig`). Also open there: `@ComponentScan` on a package that does not exist, dead `getDatabaseContext()`, and a parent Boot version trailing the app's. The library is published and versioned, so config-level fixes in the app are preferred — but **check D-5 before trusting any `spring.mvc.*` or `spring.jackson.*` property.** |
 | **T11.3 push / T11.12 masked calling** | Stubbed behind interfaces | Push is Phase 10. |
 | **D-2 TaskChat** | Stays deferred | T4.9 phone reveal covers the need. Delete the placeholder (Phase 14). |
 | **D-3 in-app payments** | Correctly out of scope | **Not** the same as Phase 3, which is a record, not a payment. |
 | **D-6 multi-tenancy** | Inert by choice | — |
 | **Random OTP + SMS delivery** | **Deferred again by the product owner, 2026-08-24** | Out of PLAN-5 entirely. The app is to be *completed* first; security and release-readiness come in a later plan. The path exists end to end — generation, bcrypt into Redis, rate limiting (T11.6), verification — and development uses a fixed `000000`. When it is picked up it needs an SMS provider (~₹0.12–0.25 a message) and **TRAI DLT registration, which takes days to weeks**, so start that paperwork before the code. |
+| **D-7 instant hire, posting side** | **Not deferred — folded into Phase 12, 2026-08-24** | Found by `check-endpoint-callers.py`: the accepting half is built and `post-instant-job` has no caller, so the flag rides every job payload for something nobody can create. **An earlier draft recorded this as "deferred by the product owner" on 2026-08-19; that attribution was not accurate** and is corrected here. The owner's actual direction is that instant hire should not be a separate thing at all — scheduling for today at the current time *is* the instant hire. See Phase 12; detail in DEFERRED.md D-7. |
 
 ## III.B Known issues, unfixed
 

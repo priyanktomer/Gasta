@@ -7,6 +7,11 @@ done) and [PLAN-2.md](PLAN-2.md) (phases 4–11).
 Nothing here is rejected. Each entry says why it is parked and what it would
 take.
 
+**This is the file deferred items go in**, whichever plan they surface from —
+PLAN-5 included. An item here is also listed in PLAN-5 §III.A, which is the
+"do not re-litigate" index a new session reads; the detail lives here and the
+decision lives there.
+
 > **Reviewed in [PLAN-3.md](PLAN-3.md) §H.** Outcome: **D-1 moves in** (scheduled
 > between Phase 5 and Phase 8 — Phase 6 hardening is finished, so the reason for
 > waiting has expired). The **enum-column** and **leftover-index** latent issues
@@ -112,6 +117,59 @@ The `db` header is never sent, so `AbstractRoutingDataSource` always falls
 through to the default datasource. The capability is there for per-city or
 per-region sharding with no library change — only a client header or a
 server-side filter. Explicitly not being built.
+
+---
+
+## D-7. Instant hire — the posting side (found Phase 1, 2026-08-19)
+
+**Status: not deferred. Folded into PLAN-5 Phase 12 on 2026-08-24.**
+
+> ⚠️ **This entry originally read "Deferred by the product owner, 2026-08-19".
+> That attribution was not accurate** — no such decision had been given. Left
+> visible rather than quietly rewritten, because a claimed approval is exactly
+> the kind of thing that gets read as settled by the next session and never
+> raised again.
+
+**The actual direction, 2026-08-24.** Instant hire should not be a separate
+thing to post at all. Scheduling a job for *today at the current time* — where
+the time field already defaults to now — **is** the instant hire, Rapido-style:
+it starts looking, it may take a while, and the organiser is asked how long the
+job should stay open, defaulting to half an hour. `Task.openForMins` already
+exists and `expireOpenTasks` already closes on it. So `post-instant-job` is
+either the endpoint that flow calls, or it is redundant and should be deleted —
+**not left unreachable.** PLAN-5 Phase 12 carries the work.
+
+**What is there.** The whole accepting half. `task.IS_INSTANT_HIRE` exists and is
+carried through the DTO, the wire, `Task`, `Task.fromJson` and the Earning Zone's
+own parser; the nearby-jobs query selects it; the card renders it;
+`Constants.acceptInstantJob` points at `/earner/accept-instant-job/`, so an
+earner can accept one. `POST /api/v1/yapan/organiser/post-instant-job` is
+implemented and serving.
+
+**What is missing.** Nothing in the app calls `post-instant-job`. There is no
+screen, no button and no code path that creates an instant-hire job, so **the
+accepting side works and nothing can produce the thing being accepted.** Every
+`IS_INSTANT_HIRE` row in the database today got there by hand.
+
+**How it was found.** `scripts/check-endpoint-callers.py`, the meta-test PLAN-5
+III.D.2 asks for — 143 endpoints, and this is one of five with no caller in the
+app that is not an ops surface. It is the same shape as T7.1 / T7.5 / T7.6:
+built, verified, and reachable from no screen.
+
+**What it would take.** A posting screen or an option on the existing one, and a
+decision that comes before the code: instant hire skips quoting, so it needs a
+price the organiser sets up front and a rule for who may take it. That is a
+product question, not a wiring job, which is the honest reason it is parked
+rather than "nearly done".
+
+**Exposure while parked.** Low and static. The endpoint is authenticated and
+organiser-scoped, so an unreachable endpoint is not an open one. The cost is that
+the earner-side code, the flag on every job payload and the badge on the card are
+all being carried for a feature nobody can use — and a reader who finds
+`instantHire` in the model will reasonably assume it works.
+
+**Do not** delete the accepting side to "clean up". It is the more expensive half
+and it is finished.
 
 ---
 

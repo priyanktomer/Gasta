@@ -3288,3 +3288,70 @@ and is verified, but there is no screen for it, so today the answer comes only
 from the sweep's default. That default is the safe one (release), so the gap
 costs an organiser the *option* to go ahead short-handed rather than costing
 anybody a day's wage. Worth building next; it is a notification with two buttons.
+
+## 28. The Jackson floor that was not a floor (D-5 / T11.7)
+
+PLAN-3 §20 added this to `application.properties`, with a comment calling it
+"the floor for the ones that do not [carry `@JsonFormat`], including fields not
+yet written":
+
+```properties
+spring.jackson.serialization.write-dates-as-timestamps=false
+```
+
+**It does nothing.** Probed by temporarily adding two bare dates to the public
+health endpoint:
+
+```
+{"probeDate":[2026,8,24],"probeDateTime":[2026,8,24,22,14,49,722809400], ...}
+```
+
+Arrays — exactly the shape that broke the advances ledger with *"type
+'List&lt;dynamic&gt;' is not a subtype of type 'String?'"*.
+
+### Why, and why it was findable a year ago
+
+`mysql-multitenancy`'s `MvcConfig` carries **`@EnableWebMvc`**, which switches
+off Boot's `WebMvcAutoConfiguration` — and that auto-configuration is what
+applies `spring.jackson.*` to the HTTP message converters.
+
+**DEFERRED.md D-5 has said so since Phase 4**: *"`spring.mvc.*` and
+`spring.jackson.*` properties are inert. Harmless today; it will surprise
+someone."* It was right, and I was the someone. I had also mis-recorded D-5 in
+PLAN-4 §6.3 as being about `access-app` rather than `mysql-multitenancy`, and
+carried that error into PLAN-5 — so the one document that would have warned me
+was filed under the wrong library.
+
+### The fix
+
+`config/JacksonWebConfig` — a `WebMvcConfigurer` that disables
+`WRITE_DATES_AS_TIMESTAMPS` on the Jackson converter in code.
+
+- **Not in the library.** It is a published, versioned artifact other products
+  consume; D-5's own guidance is that config-level fixes are preferred.
+- **`WebMvcConfigurer` still works under `@EnableWebMvc`** —
+  `DelegatingWebMvcConfiguration` collects them — so this reaches the converters
+  without touching `mysql-multitenancy`.
+- **`extendMessageConverters`, not `configureMessageConverters`.** The latter
+  *replaces* the default list, which would strip every non-JSON converter.
+
+After: `{"probeDate":"2026-08-24","probeDateTime":"2026-08-24T22:17:46.3963205"}`.
+
+The property stays in `application.properties` — it is the correct declaration
+and the right thing to read there — but its comment now says plainly that it is
+inert on its own and that `JacksonWebConfig` is what holds the line true. Two
+things that must not be deleted independently.
+
+**Blast radius: none today.** Every DTO date already carries an explicit
+`@JsonFormat`, which is the only reason this was invisible. Verified on the
+emulator after the change: the register renders August 2026 with every day in
+the right cell and the right status. This is a safety net for the *next* date
+field somebody adds — which is what the property was always supposed to be.
+
+### The lesson
+
+Rule 4 says a comment that disagrees with its code is worse than no comment. This
+one claimed a guarantee that did not exist, in a file about dates, in a codebase
+that had already been bitten by dates once. **A property that is never observed
+to take effect is a belief, not a setting** — the same shape as rule 6 about
+guards that have never fired.

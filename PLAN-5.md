@@ -82,9 +82,9 @@ pins `[17,22)`.
 | 0–4B | ✅ Complete |
 | 5 — Substitution, flexibility, identity | ◐ T5.7 identity recovery **deferred by the owner** (III.A) |
 | 6 — Correctness, authz, perf, caching | ✅ Complete |
-| 7 — Trust & reputation | ◐ T7.1 / T7.5 / T7.6 built, **unreachable** → Phase 9 |
+| 7 — Trust & reputation | ◐ T7.1 / T7.5 / T7.6 built, **unreachable** → Phase 8 |
 | 8 — Demand & liquidity | ✅ Complete |
-| 9 — Accessibility & language | ◐ T9.5 / T9.6 outstanding; Hindi 57% → Phase 5 |
+| 9 — Accessibility & language | ◐ T9.5 / T9.6 outstanding; Hindi 57% → Phase 4 |
 | 10 — Ops & support | ✅ Complete |
 | 11 — Scale & hardening | ◐ T11.8 file storage, T11.11 remainder |
 | §E — Doorstep | ✅ Complete |
@@ -129,25 +129,68 @@ for new columns.
 **Goal.** Begin the three things that run on wall-clock time, so they are never
 what everything else waits for.
 
-**Why now.** Each takes days-to-weeks of somebody else's time. Starting them at
-Phase 6 costs six phases of delay for no engineering reason.
+**Why now.** Both take somebody else's time, and one protects data that cannot be
+recovered.
 
-1. **DLT / sender-ID registration** for transactional SMS (TRAI portal). Blocks
-   Phase 2, takes days to weeks. Start before writing any OTP code.
-2. **Engage an Indian lawyer** for the documents in III.C. Phase 3 builds the
-   *mechanism*; the *text* must come from them. Send III.C as the brief.
-3. **Database backups.** `mysqldump` on a cron, off-machine. About an hour, and
+1. **Database backups.** `mysqldump` on a cron, off-machine. About an hour, and
    the data it protects — the work records §7.4 exists to create — is
-   irreplaceable. **The cheapest high-value item in this plan.**
+   irreplaceable. **The cheapest high-value item in this plan**, and the only
+   Phase 0 item that is urgent today.
+2. **Engage an Indian lawyer** for the documents in III.C. Phase 2 builds the
+   *mechanism*; the *text* must come from them. Send III.C as the brief.
 
-**Done when:** DLT submitted, lawyer briefed, and a backup taken **and restored
-once** to prove it works.
+**Not here any more: DLT / SMS registration.** OTP delivery is out of PLAN-5
+entirely (III.A) — the app is to be *completed* first. When release is actually
+near, DLT registration is the long pole and takes days to weeks, so it starts
+then, not now.
+
+**Done when:** a backup has been taken **and restored once** to prove it works,
+and the lawyer is briefed.
 
 ---
 
 ## Phase 1 — A safety net before the next feature
 
-**Goal.** Make the following twelve phases verifiable: integration tests against
+> ### ⚠️ Most of this already exists on a branch — read before redoing it
+>
+> A cloud session implemented Phase 1 on **`claude/plan-5-implementation-ql0oft`**
+> (the same branch name in all three repos). **`main` is untouched.** Reviewed
+> 2026-08-24; the work is good and should be brought in rather than repeated.
+>
+> **What is on it**
+>
+> | Part | Risk | Note |
+> |---|---|---|
+> | `scripts/seed.sql`, `reset.sql`, `README.md`, `check-endpoint-callers.py` | none | Pure additions. The caller script is the III.D.2 meta-test. |
+> | Backend `src/test/**`, app `test/*.dart`, CI for both repos | none | Additions only, plus deleting the `widget_test.dart` stub. 60 backend + 27 app tests. |
+> | **`V1__baseline.sql` rewritten** (+878 lines) | **verified safe here** | See below — this is the important one. |
+> | `LoginServiceImpl.refreshToken` — 500 → 401 when no tokens on the request | low, and a real fix | A malformed request returned 500, and the app maps every non-200 that is not a connection failure to `RefreshResult.rejected` — so it **looked like "your session is over" and cleared it**. Same family as the offline-logout bug. |
+> | 6 validation fixes (DTO constraints, 2 controllers, `ServiceabilityServiceImpl`) | low | Found by an invalid-input sweep; each was previously a 500. |
+>
+> **The V1 rewrite is the headline, and it is a real find.** V1 was a no-op
+> (`SELECT 1`) on the reasoning that Hibernate had built every existing database.
+> But **Flyway runs before Hibernate**, so against an *empty* database V1 did
+> nothing and V2's first statement hit a table that did not exist —
+> `Table 'gasta.task_schedule' doesn't exist`. **No fresh database could ever be
+> provisioned**, which is why CI and Testcontainers were impossible, and why
+> `ddl-auto=validate` (Phase 11) was unreachable.
+>
+> **Editing an applied migration normally breaks existing databases** — our own
+> conventions forbid it. Checked here: this machine's `flyway_schema_history` row
+> for V1 is `<< Flyway Baseline >>` with a **NULL checksum**, so Flyway neither
+> validates nor re-runs it. **Safe for this database; only fresh ones are
+> affected** — which is the entire point. Re-check this on any other environment
+> before merging there.
+>
+> **They come as a unit.** The tests need the V1 fix and the `pom.xml`
+> Testcontainers additions to run at all, so this is not "take the tests, leave
+> the migration".
+>
+> **Merge checklist:** run the backend suite; run the app on the emulator and walk
+> the register, an advance and a doorstep order; confirm the backend still starts
+> against the *existing* database (not just a container). Then merge.
+
+**Goal.** Make the following phases verifiable: integration tests against
 a real schema, a regression test per bug already found, reproducible seed data,
 CI.
 
@@ -170,7 +213,7 @@ flow and a tab change — all touching things that already broke once.
 1. **Testcontainers harness.** `@SpringBootTest` with MySQL 8 + Redis containers.
    Run Flyway from V1 on a clean container each time — that also continuously
    proves the migration chain, which is the gate for `ddl-auto=validate`
-   (Phase 12).
+   (Phase 10).
 2. **One test per bug in III.D.1.** That table is the sprint: twelve real cases,
    all previously invisible to the compiler.
 3. **Seed profile** (`scripts/seed.sql`): one organiser, three earners, a
@@ -196,52 +239,7 @@ for the native-SQL tests — mocks would have caught **none** of the twelve.
 
 ---
 
-## Phase 2 — Real OTP ⚠️ hard launch blocker
-
-**Goal.** A real SMS arrives with a random code.
-
-**Why now.** The single thing between this and a real user. Everything else works
-for somebody already signed in.
-
-**Depends on** Phase 0's DLT approval.
-
-**Files**
-
-- **`access-app` owns OTP generation and verification** — look there first.
-  Changing it is a version bump for other products (III.A / T11.7).
-- `JeevikaService/.../controller/CommonController.java` — `otp-request`,
-  `login-verify`, `sign-up-verify`
-- `application.properties` — `gasta.otp.max-per-phone-per-hour=6`,
-  `gasta.otp.max-per-caller-per-hour=40`, `access-app-otp=false`
-
-**Steps**
-
-1. Pick a provider (MSG91, Fast2SMS, or whatever the eventual host resells;
-   Twilio is the expensive option). ~₹0.12–0.25 a message — a thousand logins is
-   under ₹250. **This is the first place "no paid services" has to bend**, and it
-   bends cheaply.
-2. An `SmsSender` interface with a logging implementation for development —
-   mirror `PushSender` / `LoggingPushSender`, which are already shaped that way.
-   Keep the dev path working with no network.
-3. Wire the real sender behind a config flag; credentials from the environment
-   only.
-4. Turn on random generation. Confirm the Redis bcrypt-hashed storage and TTL
-   still behave.
-5. Keep the abuse guards — built for exactly this moment. The per-caller limit is
-   deliberately far higher than per-phone because carrier-grade NAT means one IP
-   is a village.
-
-**Verify.** Real SMS to a real handset. Then: wrong code rejected; expired code
-rejected; 7th request in an hour blocked; **OTP absent from logs at every level**.
-
-**Done when:** a new user signs up on a real phone and the code is not in the logs.
-
-**Do not.** Don't log the OTP, even at DEBUG. Don't relax the rate limits for
-testing convenience.
-
----
-
-## Phase 3 — Consent, age gate, grievance, deletion
+## Phase 2 — Consent, age gate, grievance, deletion
 
 **Goal.** The legal mechanisms exist in the product, with placeholder text the
 lawyer later replaces.
@@ -296,7 +294,7 @@ change, not a code change.
 
 ---
 
-## Phase 4 — The wage-payment ledger ⚠️ biggest product hole
+## Phase 3 — The wage-payment ledger ⚠️ biggest product hole
 
 **Goal.** Record whether the wage was actually handed over.
 
@@ -346,7 +344,7 @@ and that distinction is what keeps the intermediary framing true (III.C.1).
 
 ---
 
-## Phase 5 — Hindi where the money is
+## Phase 4 — Hindi where the money is
 
 **Goal.** The screens that decide money read in Hindi.
 
@@ -385,7 +383,7 @@ otherwise and was wrong.
 
 ---
 
-## Phase 6 — Progressive disclosure on three screens
+## Phase 5 — Progressive disclosure on three screens
 
 **Goal.** Stop single list items from filling the screen.
 
@@ -433,7 +431,7 @@ the app to find out what time to arrive.
 
 ---
 
-## Phase 7 — A Today tab, and notifications to a bell
+## Phase 6 — A Today tab, and notifications to a bell
 
 **Goal.** Put the most-used screen in the bottom bar.
 
@@ -486,7 +484,7 @@ two people discussing the app is a support cost.
 
 ---
 
-## Phase 8 — Icons and infographics
+## Phase 7 — Icons and infographics
 
 **Goal.** Make the app readable by picture, not only by word.
 
@@ -537,7 +535,7 @@ distinguished by colour alone.
 
 ---
 
-## Phase 9 — The one screen that unlocks four endpoints
+## Phase 8 — The one screen that unlocks four endpoints
 
 **Goal.** Make T7.1 / T7.5 / T7.6 reachable, and show the ID-verified badge.
 
@@ -573,7 +571,7 @@ never a number that invites a threshold (T7.7).
 
 ---
 
-## Phase 10 — Fairness both ways
+## Phase 9 — Fairness both ways
 
 **Goal.** Measure household reliability the way worker reliability is measured.
 
@@ -601,13 +599,13 @@ that the worker is a person with a livelihood cannot measure only her failures.*
    currently reads as "nobody minds", and the cost falls on whoever travelled.
 
 **Verify.** Cancel a visit at short notice as the organiser; confirm the counter
-moves and shows on the Phase 9 profile.
+moves and shows on the Phase 8 profile.
 
 **Done when:** both sides' reliability is visible on the same terms.
 
 ---
 
-## Phase 11 — Push, with a fallback that works
+## Phase 10 — Push, with a fallback that works
 
 **Goal.** Notifications arrive without the app being open.
 
@@ -641,7 +639,7 @@ an accelerator, not the mechanism.
 
 ---
 
-## Phase 12 — Deployment and store readiness
+## Phase 11 — Deployment and store readiness
 
 **Goal.** It can be installed by somebody who is not us.
 
@@ -672,17 +670,87 @@ profile starts against a real database.
 
 ---
 
-## Phase 13 — Handover, and choosing instead of typing
+## Phase 12 — The posting flow: scheduling, instant hire, and choosing
 
-1. **§7.8 handover (M).** "She is leaving on the 30th" — notice, post the
-   replacement with an overlap, the outgoing worker shows the incoming one what
-   to do. **That overlap is what actually makes a handover work.** T5.1 covers
-   *temporary* cover; this is permanent, and it is the moment a household is most
-   likely to leave the platform to replace her the old way. The trial-check-in
-   half of §7.8 is already done.
-2. **T9.6 replace typing with choosing (S–M).** The posting wizard still asks for
-   free text where a picker would do. Directly serves the low-literacy goal and
-   needs **no new dependency** — unlike T9.5 / §7.6, which are blocked (III.F).
+**Goal.** Make posting a job easier, and make instant hire something that
+*happens* inside scheduling rather than a separate thing to find.
+
+**Why now.** The product owner's direction, 2026-08-24:
+
+> "I don't want to make the app difficult to use. Instant hire, if not needed
+> then remove or whatever. When we schedule a job for today and select schedule
+> time (there by default current time is shown) — there itself we can think of
+> instant hire, like Rapido/Uber. It starts finding but may take some time, so
+> we ask the user: work is open for how many hours, by default half an hour.
+> See scheduling functionality properly and scope of improvement."
+
+That is a better design than the one the code was heading towards, and **most of
+it already exists** — this is mostly wiring, not building.
+
+**What is already there** (verified 2026-08-24):
+
+| Piece | State |
+|---|---|
+| `new_task_page.dart:55` — `TimeOfDay taskTime = TimeOfDay.now()` | ✅ the time field **already defaults to now** |
+| `Task.openForMins` / `openForDays`, and both on `NewTaskDto` | ✅ backend already accepts a minutes window |
+| `LifecycleSweepServiceImpl.quoteDeadline()` + `expireOpenTasks()` | ✅ already closes a job when its window passes |
+| `Task.IS_INSTANT_HIRE`, DTO → wire → `Task` → Earning Zone → *Take this job* | ✅ **the whole accepting half works** |
+| `POST /organiser/post-instant-job` | ⚠️ implemented, **no caller** — this is D-7 |
+| App sending `openForMins` | ❌ the app only ever sends `openForDays` |
+
+**Steps**
+
+1. **Fold instant hire into scheduling — do not build a separate posting screen.**
+   When the chosen date is today and the time is at/near now, the job *is* an
+   instant hire. Set the flag from that, rather than asking the organiser to
+   understand a second concept.
+2. **Ask "how long should this stay open?"** — the Rapido/Uber shape. Default
+   **30 minutes**; offer a couple of longer choices. Send it as `openForMins`,
+   which the backend already understands and already expires on.
+3. **Show that it is searching**, and what happens when it does not fill —
+   because it often will not. The crew partial-fill banner (§7.11,
+   `posted_tasks_screen.dart`) is the pattern: state the deadline, and say what
+   happens if nobody comes.
+4. **Then decide D-7**: with this in place, `post-instant-job` is either the
+   endpoint this flow calls, or it is redundant and should be **deleted**. Do not
+   leave it sitting unreachable — that is the §6.7 defect this plan keeps closing.
+   **Do not delete the accepting side**; it is the expensive half and it is
+   finished.
+5. **T9.6 — replace typing with choosing.** Same screen. The wizard still asks
+   for free text where a picker would do. Directly serves the low-literacy goal
+   and needs no new dependency.
+6. **Review the scheduling step as a whole** while you are in there, as asked.
+   Known rough edges: `openForMins` never sent; the repeat/pattern options are
+   the densest part of the wizard; and a job posted for "today, 6am" tomorrow
+   morning is indistinguishable from one posted for next month.
+
+**Verify.** Post a job for today at the current time and confirm it becomes an
+instant hire an earner can take from Earning Zone; post one for next week and
+confirm it does *not*. Let a 30-minute window expire and confirm the job closes
+and the organiser is told.
+
+**Done when:** instant hire is reachable without a separate screen, and D-7 is
+either wired or deleted rather than parked.
+
+**Do not.** Don't add an "instant hire?" toggle the organiser has to reason
+about — the whole point is that choosing *today, now* already says it.
+
+---
+
+## Phase 13 — The handover
+
+**Goal.** "She is leaving on the 30th."
+
+**Why now.** T5.1 covers *temporary* cover; there is nothing for a permanent
+departure — which is exactly when a household is most likely to leave the
+platform and replace her the old way. The trial-check-in half of §7.8 is already
+done.
+
+**Steps.** Notice → post the replacement with an **overlap** → the outgoing
+worker shows the incoming one what to do. **That overlap is what actually makes
+a handover work**, and it is worth paying for.
+
+**Size:** M.
 
 ---
 
@@ -716,15 +784,15 @@ Small, independent, safe to do in any gap. Detail in III.B.
 |---|---|---|
 | **T5.7 identity recovery** | Keep deferred (re-asked 2026-08-17) | **An earner who loses their phone loses everything** — work record, ratings, engagements — with no route back. Ops can rescue one user by hand; it does not scale. The cheap half (phone change verified through the old number) is still worth taking. |
 | **T11.7 `access-app` changes** | Leave it | Anything Gasta wants *on a user* goes in a side table (`UserReputation`, `EarnerPreference` already do). Cost paid slowly in joins. Revisit only if *authentication behaviour itself* must change — no side table reaches that. |
-| **T11.3 push / T11.12 masked calling** | Stubbed behind interfaces | Push is Phase 11. |
+| **T11.3 push / T11.12 masked calling** | Stubbed behind interfaces | Push is Phase 10. |
 | **D-2 TaskChat** | Stays deferred | T4.9 phone reveal covers the need. Delete the placeholder (Phase 14). |
-| **D-3 in-app payments** | Correctly out of scope | **Not** the same as Phase 4, which is a record, not a payment. |
+| **D-3 in-app payments** | Correctly out of scope | **Not** the same as Phase 3, which is a record, not a payment. |
 | **D-6 multi-tenancy** | Inert by choice | — |
-| **Random OTP** | Was deferred | Now Phase 2 — the launch blocker. |
+| **Random OTP + SMS delivery** | **Deferred again by the product owner, 2026-08-24** | Out of PLAN-5 entirely. The app is to be *completed* first; security and release-readiness come in a later plan. The path exists end to end — generation, bcrypt into Redis, rate limiting (T11.6), verification — and development uses a fixed `000000`. When it is picked up it needs an SMS provider (~₹0.12–0.25 a message) and **TRAI DLT registration, which takes days to weeks**, so start that paperwork before the code. |
 
 ## III.B Known issues, unfixed
 
-1. **`Task.amountPaid`** — declared, never written or read. Phase 4 / 14.
+1. **`Task.amountPaid`** — declared, never written or read. Phase 3 / 14.
 2. **`Slot` enum bloat** — 38 values for ~4 used; `A_0600_0730` and `E_1` are two
    schemes meaning different things. Label guard added; bloat remains.
 3. **`OrganiserServiceImpl` ~2,400 lines** — where three of last session's bugs
@@ -750,7 +818,7 @@ termination obligations attach for every worker on the platform.
 
 What keeps it honest, mostly already true:
 - **Gasta is not in the payment path** — cash between two people. The strongest
-  single fact in its favour, and why Phase 4 must stay a ledger.
+  single fact in its favour, and why Phase 3 must stay a ledger.
 - Gasta does not direct the work, set hours, or supervise.
 
 ⚠️ **Word §7.5 rate guidance carefully.** "People nearby pay ₹550–650" is
@@ -804,7 +872,7 @@ worker and shows good faith.
 | **Privacy Policy** | DPDP-shaped: what, why, how long, shared with whom, rights, officer. |
 | **Worker terms** | Separate and **shorter**. The person with the least reading ability should not get the longest document. |
 | **Conduct rules** | Harassment, discrimination, safety, what removes an account. |
-| **Cancellation expectations** | Phase 10. Not a fee — an expectation and a record. |
+| **Cancellation expectations** | Phase 9. Not a fee — an expectation and a record. |
 | **Grievance page** | Officer name, address, email, SLA. |
 
 Two drafting cautions: Indian consumer courts routinely read down one-sided
@@ -880,11 +948,11 @@ matching strangers quickly and taking a cut. Five things are universal, and four
 are missing here:
 
 - **(a) Household reliability is not tracked** while worker reliability is →
-  Phase 10.
-- **(b) The ID-verified badge is computed and shown nowhere** → Phase 9.
-- **(c) No cancellation policy of any kind** → Phase 10.
-- **(d) No receipt** → Phase 4.
-- **(e) No grievance route with a name on it** → Phase 3, and a legal requirement
+  Phase 9.
+- **(b) The ID-verified badge is computed and shown nowhere** → Phase 8.
+- **(c) No cancellation policy of any kind** → Phase 9.
+- **(d) No receipt** → Phase 3.
+- **(e) No grievance route with a name on it** → Phase 2, and a legal requirement
   rather than a nicety.
 
 **What Gasta already does better and must not lose:** the safety alert during a
@@ -908,7 +976,7 @@ self-hosted Plausible or Umami if cost is the objection); and an e-Shram nudge.
 | **T11.8 file / image storage** | Not started. Blocks voice notes, ID photos, before/after pictures. |
 | **Spring Boot Actuator** | Only 3.1.2 and 4.1.0 are cached against a 3.3.3 app, and the build runs offline — it would fail to resolve or silently mix versions. `HealthController` covers the need meanwhile. |
 
-**Push transports** (Phase 11):
+**Push transports** (Phase 10):
 
 | Option | What it actually costs |
 |---|---|

@@ -6,6 +6,7 @@
 | `reset.sql` | Removes exactly what `seed.sql` created, and nothing else. |
 | `check-no-bom.sh` | Fails if any Java/Dart source carries a UTF-8 BOM. Now also run by CI in each code repository. |
 | `check-endpoint-callers.py` | Endpoints the backend serves that nothing in the app calls (PLAN-5 III.D.2). |
+| `backup-db.sh` | The database backup (PLAN-5 Phase 0). `--verify` proves it restores. |
 
 ## check-endpoint-callers.py
 
@@ -89,3 +90,36 @@ Two traps worth knowing before you hit them:
   answers `ERROR 1137: Can't reopen table`. Both of the two-column deletes here
   do exactly that, which is why these scripts use a repeated subquery over
   `app_users` rather than the tidier temporary table.
+
+## backup-db.sh
+
+```bash
+GASTA_DB_PASSWORD='...' GASTA_BACKUP_DIR=/some/other/disk scripts/backup-db.sh --verify
+```
+
+PLAN-5 Phase 0 calls this "the cheapest high-value item in this plan", and what
+it protects is not the code. It is the work record — every visit completed,
+every advance two people agreed on, every rate change settled months ago. §7.4
+exists to give a domestic worker the documented history nobody else holds, and
+until this script one disk failure took it.
+
+**Put `GASTA_BACKUP_DIR` on a different disk.** A backup beside the database
+survives a dropped table and not a dead drive, which is the failure it is really
+for.
+
+**`--verify` restores into a scratch schema** (`gasta_restore_check`), compares
+the table count, and drops it. It never touches the live database. Rule 6 says a
+guard that has never fired is not known to work; an untested backup is a belief,
+not a backup.
+
+**Both failure guards were tested by breaking them.** With a wrong password the
+first version left a **20-byte gzip header** in the backup directory — a file
+with a plausible name and timestamp that restores to nothing, which is worse
+than no backup because the directory looks healthy until you need it. It now
+prints the MySQL error, deletes the partial file, and exits non-zero.
+
+### Running it on a schedule
+
+Nothing here is a service. On Windows, Task Scheduler → daily → run
+`"C:\Program Files\Gitinash.exe" -lc "GASTA_DB_PASSWORD=... /path/to/backup-db.sh"`.
+On a Linux host, one crontab line. Keep `--verify` on at least a weekly run.

@@ -171,7 +171,7 @@ and the lawyer is briefed.
 
 ---
 
-## Phase 1 — A safety net before the next feature
+## Phase 1 — A safety net before the next feature ✅ done
 
 > ### ✅ Phase 1 is merged — do not redo it
 >
@@ -911,8 +911,12 @@ hindsight.
 
 ## III.D Testing detail
 
-**D.1 The regression table — build the suite from bugs that already happened.**
-Every one passed both compilers.
+**D.1 The regression table — the suite built from bugs that already happened.**
+Every one passed both compilers. **All twelve now have a test** (Phase 1, merged
+2026-08-24), and each was verified by reintroducing the original defect and
+watching it fail — a guard that has never fired is not known to work. Kept here
+because the list is also the argument for the layers in D.2, and because a new
+one belongs in it the moment it is found.
 
 | Bug | Test that catches it | Layer |
 |---|---|---|

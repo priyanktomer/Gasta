@@ -22,14 +22,14 @@ Clone them as siblings inside this folder and the paths in the plans work.
 
 | Document | Read it for |
 |---|---|
-| **PLAN-5.md** | **What to do next.** The current entry point, organised as **15 numbered phases, one per session** — so a fresh chat reads Part I plus the one phase it is doing, not the whole file. |
+| **PLAN-5.md** | **What to do next.** The current entry point, organised as **numbered phases, one per session** — a fresh chat reads Part I plus the one phase it is doing, not the whole file. **Phase 1 is done; start at Phase 2.** |
 | **PLAN-4.md** | The product thesis, the architecture, and the rules learned the hard way. §1–§4 are still current. |
 | **PLAN-3.md** | The detailed history — every item's reasoning and every defect found. |
 | **DESIGN-RULES.md** | Binding UI rules. |
 | **AUDIT.md**, **DEFERRED.md**, **PLAN.md**, **PLAN-2.md** | Earlier phases, kept for provenance. |
 
-Phase 0 is not code and should be started immediately: DLT registration for SMS,
-a lawyer for the terms, and database backups. All three run on wall-clock time.
+Phase 0 is not code and should be started now: **database backups** (an hour of
+work against irreversible loss) and a lawyer for the terms.
 
 ## Two rules that override everything else
 

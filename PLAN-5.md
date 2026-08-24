@@ -148,26 +148,35 @@ for new columns.
 
 ## Phase 0 — Start the clocks (not code) ⚠️ today
 
-**Goal.** Begin the three things that run on wall-clock time, so they are never
-what everything else waits for.
+**Goal.** Begin the two things that run on wall-clock time, so they are never
+what everything else waits for. (It said *three* while DLT registration was one
+of them; that left for III.A and the count did not follow it out.)
 
-**Why now.** Both take somebody else's time, and one protects data that cannot be
-recovered.
+**Why now.** One protects data that cannot be recovered; the other takes
+somebody else's time, so the sooner it starts the less it blocks.
 
-1. **Database backups.** `mysqldump` on a cron, off-machine. About an hour, and
-   the data it protects — the work records §7.4 exists to create — is
-   irreplaceable. **The cheapest high-value item in this plan**, and the only
-   Phase 0 item that is urgent today.
-2. **Engage an Indian lawyer** for the documents in III.C. Phase 2 builds the
-   *mechanism*; the *text* must come from them. Send III.C as the brief.
+1. **Database backups.** ✅ **Done.** `scripts/backup-db.sh` — `mysqldump`,
+   gzip, dated file, rotation, and `--verify` restores into a scratch schema and
+   compares the table count. Proven both ways: **40 tables restored**, and the
+   failure guard fired on a wrong password rather than leaving a 20-byte gzip
+   header that looks like a backup.
+   **Still on the product owner:** point `GASTA_BACKUP_DIR` at another disk and
+   put it on a schedule. A backup beside the database survives a dropped table
+   and not a dead drive, which is the failure it is really for.
+2. **Engage an Indian lawyer** for the documents in III.C. ⚠️ **Still open, and
+   now the blocker.** Phase 2 has built the *mechanism* and shipped six
+   placeholder documents, each opening with a DRAFT banner; the *text* must come
+   from them. Send III.C as the brief, along with
+   `JeevikaService/src/main/resources/legal/` — a draft to correct is a cheaper
+   thing to hand a lawyer than a blank page.
 
 **Not here any more: DLT / SMS registration.** OTP delivery is out of PLAN-5
 entirely (III.A) — the app is to be *completed* first. When release is actually
 near, DLT registration is the long pole and takes days to weeks, so it starts
 then, not now.
 
-**Done when:** a backup has been taken **and restored once** to prove it works,
-and the lawyer is briefed.
+**Done when:** a backup has been taken **and restored once** to prove it works
+(done), and the lawyer is briefed (outstanding).
 
 ---
 
@@ -266,7 +275,7 @@ for the native-SQL tests — mocks would have caught **none** of the twelve.
 
 ---
 
-## Phase 2 — Consent, age gate, grievance, deletion
+## Phase 2 — Consent, age gate, grievance, deletion ✅ done 2026-08-25
 
 **Goal.** The legal mechanisms exist in the product, with placeholder text the
 lawyer later replaces.
@@ -318,6 +327,92 @@ change, not a code change.
 
 **Do not.** Don't ship legal text you wrote yourself. Don't make consent one
 "I agree" over a wall of English.
+
+### What was built
+
+Backend — `UserConsent` and `UserAccountProfile` entities with repos, migration
+`V10`; `ComplianceService`/`Impl`; `SupportKind.GRIEVANCE`; six endpoints
+(`consent-status`, `record-consent`, `declare-age`, `file-grievance`,
+`delete-my-account` authenticated; `legal-document`, `grievance-officer` public);
+the `add-existing-worker` age guard with `ManagedEarner.adultDeclaredAt` and
+migration `V11`.
+
+App — `compliance_service.dart`; `consent_screen.dart` (bilingual, itemised,
+real "no"); `legal_document_screen.dart` with a small Markdown renderer;
+`grievance_screen.dart`; consent gate in `BottomNavigation`; date of birth on
+`signup_screen.dart`; Terms/Privacy on `login_screen.dart`; complaint, documents
+and delete-account on `user_account_screen.dart`; the adult checkbox on
+`add_existing_worker_screen.dart`.
+
+Documents — six placeholder Markdown files in
+`JeevikaService/src/main/resources/legal/`, English and Hindi, each opening with
+a DRAFT banner. Versions live in `application.properties`, so the lawyer's text
+is a content change and a bumped property.
+
+**Two decisions worth knowing.** The document *text* is served by the backend
+rather than bundled in the app, so the words and the version can never disagree
+— an app one release behind would otherwise show old wording under a new version
+number, which is the failure `UserConsent` exists to prevent. And the consent
+gate lives inside `BottomNavigation` rather than the startup chain, because
+consent belongs to an account and the startup chain runs before anybody has one;
+six places construct that widget and all of them are covered by the one gate.
+
+### Verified in the emulator
+
+Consent gate fires on launch and after signup; Hindi toggle switches every
+string; documents open in both languages; acceptance writes three rows with key,
+version and locale and is not re-asked; **declining writes `ACCEPTED=0`** rather
+than vanishing; grievance files as `KIND=GRIEVANCE` into the ops queue and
+returns a reference number; the date-of-birth picker **cannot select a date less
+than 18 years ago** (the year list ends at 2008) and the declaration reaches
+`user_account_profile`; deletion anonymises the account, clears the profile,
+signs out, and **keeps the consent rows**; `add-existing-worker` is refused by
+the server without `adultDeclared` and proceeds with it.
+
+Backend suite 69/69, `flutter analyze` clean.
+
+### Defects found and fixed while verifying
+
+1. **`PHONE` is `NOT NULL`** in `app_users`, and deletion set it to null — the
+   constraint violation rolled the whole transaction back and the user was told
+   "something went wrong" while keeping the account they had asked to be rid of.
+   Blanked to `""` instead. Only running the destructive path found this.
+2. **Login-screen links were invisible** — `colorScheme.onPrimary` is white, and
+   the surrounding screen uses it for *button* text. On the near-white page
+   background the links were present, tappable and unseeable. Same mistake in
+   the date-of-birth field, fixed the same way.
+3. **Document body text rendered washed out** — `RichText` does not consult the
+   ambient `DefaultTextStyle`, so a style with no colour gets a fallback rather
+   than the theme's foreground. `Text.rich` restores it.
+4. **Paragraphs broke mid-sentence** — the renderer emitted one widget per
+   source line, so every hard wrap in the Markdown became a visible gap. Lines
+   are gathered into blocks now, including continuation lines under a bullet.
+5. **The privacy table ran off the screen**, cut mid-word. Cells are sized from
+   the viewport.
+
+### Still not done ⚠️ — carried to Phase 14
+
+- **Declining consent does not stop the app.** It records the refusal and asks
+  again next launch. Honouring a refusal properly means withdrawing the features
+  that depend on the data, and that belongs with the real text a lawyer signs
+  off. **This must not ship as it stands.**
+- **Deletion is a soft delete wearing a hard delete's name.** `USERNAME` is the
+  phone number and is retained, because the IT Rules 2021 require registration
+  information for 180 days after cancellation. A retention job has to clear it
+  once that window passes; that job does not exist. `RetentionService` is where
+  it goes.
+- **The documents are drafts.** Every one opens with a DRAFT banner saying so.
+  Phase 0's lawyer engagement is still the blocker.
+- **The grievance officer is unset.** `gasta.legal.grievance-officer-*` are
+  blank; the screen degrades to showing the SLAs without a name. A real person
+  has to be appointed under the IT Rules.
+- **`ManagedEarner.adultDeclaredAt` being written was not observed end to end.**
+  The guard's refusal and pass-through are both verified; watching the timestamp
+  land would have meant manufacturing an address, task, schedules, occurrences
+  and a placeholder user in the dev database and then unpicking that chain.
+- **Existing `managed_earner` rows have a null declaration**, deliberately.
+  Back-filling one nobody made would be inventing evidence; null means "added
+  before we asked".
 
 ---
 
@@ -798,6 +893,19 @@ Small, independent, safe to do in any gap. Detail in III.B.
    covers the server; the phone has nothing.
 7. Consider splitting `OrganiserServiceImpl` (~2,400 lines). Not a defect, but
    three of last session's bugs lived there.
+8. ⚠️ **Make a declined consent mean something.** Phase 2 records the refusal
+   and re-asks next launch; it does not stop the app using the data. Doing it
+   properly means withdrawing the features that depend on that data, which needs
+   the lawyer's text to say which those are. **Not shippable as it stands.**
+9. ⚠️ **Finish account deletion.** `USERNAME` holds the phone number and is
+   kept, because the IT Rules 2021 require registration information for 180 days
+   after cancellation. Nothing clears it when that window passes, so today's
+   "deletion" is a soft delete wearing a hard delete's name. Add the sweep to
+   `RetentionService`, which already batches by cutoff for notifications, keyed
+   on `UserAccountProfile.deletionRequestedAt` (indexed for this).
+10. **Appoint and configure a Grievance Officer.** `gasta.legal.grievance-*` are
+    blank; the complaint screen degrades to showing the SLAs with no name on
+    them. The IT Rules 2021 require a named person with a contact address.
 
 ---
 

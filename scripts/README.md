@@ -121,5 +121,5 @@ prints the MySQL error, deletes the partial file, and exits non-zero.
 ### Running it on a schedule
 
 Nothing here is a service. On Windows, Task Scheduler → daily → run
-`"C:\Program Files\Gitinash.exe" -lc "GASTA_DB_PASSWORD=... /path/to/backup-db.sh"`.
+`"C:/Program Files/Git/bin/bash.exe" -lc "GASTA_DB_PASSWORD=... /path/to/backup-db.sh"`.
 On a Linux host, one crontab line. Keep `--verify` on at least a weekly run.

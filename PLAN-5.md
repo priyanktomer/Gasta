@@ -1103,7 +1103,7 @@ profile starts against a real database.
 
 ---
 
-## Phase 12 — The posting flow: scheduling, instant hire, and choosing ✅ steps 1–4 done 2026-08-25
+## Phase 12 — The posting flow: scheduling, instant hire, and choosing ✅ done 2026-08-25
 
 **Goal.** Make posting a job easier, and make instant hire something that
 *happens* inside scheduling rather than a separate thing to find.
@@ -1207,14 +1207,72 @@ it disappear. Both in Hindi.
 job closes and the organiser is told. That is `expireOpenTasks`, which is
 existing and tested code, but the end-to-end wait was not sat through.
 
-### Still to do — steps 5 and 6
+### Steps 5 and 6 ✅ done 2026-08-25
 
-- **T9.6, replace typing with choosing.** The wizard still asks for free text
-  where a picker would do. Directly serves the low-literacy goal, needs no new
-  dependency, and is a screen-by-screen pass rather than one change.
-- **The scheduling step as a whole.** The repeat/pattern options are the densest
-  part of the wizard, and a job posted for "today, 6am" tomorrow morning is
-  still indistinguishable from one posted for next month.
+**T9.6 — the whole of step 3 was a 300-pixel blank box labelled "Describe the
+task".** A step of the posting wizard, on the screen a new organiser meets
+first, that a person who cannot write comfortably simply cannot fill. It is now
+eight tappable notes — what the work involves, then what to expect at the house
+— with the box kept underneath, shortened, and relabelled *"Anything else? (you
+can leave this empty)"*.
+
+The notes are held as **codes**, not sentences, so the description comes out in
+whichever language the organiser is posting in. `description` is derived from
+the selected codes plus the typed text on every read rather than stored, so the
+two cannot drift apart. **Nothing in the list is about the worker** — a chip
+asking for a particular kind of person is not a chip this app will offer.
+
+**The wizard is in Hindi now.** It was the screen a new organiser meets first
+and it was almost entirely English: every section title, both buttons, the pay
+options, the price band, the three asterisk notes, the address block.
+
+⚠️ **The repeat options had to be split into codes and labels before any of that
+was safe.** Nine places compared `getRepeatTypes()[i]` against the literal
+English words on screen to decide which half of the form to draw. Translating
+the screen would have made every one of those comparisons false in Hindi — the
+wizard would have drawn the wrong fields, silently, in one language only. That
+exact defect already happened once on the filter pane. Same for
+`getSelectDateOptions` and for the pay units, which showed the raw enum (`DAY`,
+`MONTH`, `SLOT`) in both languages.
+
+Day names now come from `intl` in the reader's language rather than a
+hand-written `['Mon', 'Tue', …]`, which is one fewer list for anybody to
+translate when a language is added.
+
+### Three more defects found by running it
+
+**The wizard was numbered 1, 2, 4, 5.** There has never been a step 3, so it
+told every organiser it had lost one. The count is derived from the page list
+now, so adding a page cannot reintroduce it.
+
+**"Next" posted the job.** On the last step the primary button still read
+*Next*, so the control that publishes a job to strangers was labelled as if it
+only turned a page. It says *Post this job* there now.
+
+**"Until this evening" was a fixed six hours.** Posted at 11pm it meant 5am. The
+other three window chips are durations; this one now is too, and is true at
+every hour.
+
+**And one thing step 6 asked for:** a date field reading `27-Aug-2026` looks the
+same whether the job is tomorrow or eleven months out. It now carries *Today* /
+*Tomorrow* / *In 4 days* / *Tuesday, in 23 days* beneath it — past a week the
+weekday leads, because "in 23 days" is a number nobody pictures.
+
+### Verified
+
+Emulator, Hindi, 720×1280: every step of the wizard end to end for two
+professions; notes tapped and the text reaching MySQL as Hindi; days and slots
+posting as `MON` / `WED` / `E_1` with `REPEAT_WEEKLY_SELECT_DAYS` — the codes,
+not the labels, which is the thing the split had to prove; the instant-hire
+block still appearing for *today, now* after that split. Test postings removed
+from MySQL afterwards. `flutter analyze` clean.
+
+### Still open, and not this phase
+
+Profession names and sub-profession names (`Maid`, `Cook`, `Sweep-Mop`) and slot
+labels (`Early Morning (Up to 9am)`) still arrive from the server as English
+prose. That is **Phase 14 item 11**, which needs a code beside each label the
+way `Visit` already carries `status` beside `statusLabel`.
 
 ---
 

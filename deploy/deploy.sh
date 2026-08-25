@@ -27,11 +27,30 @@ if [[ -z "$TARGET" ]]; then
 fi
 TAG="${2:-$(git -C .. rev-parse --short HEAD 2>/dev/null || echo latest)}"
 
+# The instance key, not the default identity. Overridable for a second server.
+SSH_KEY="${GASTA_SSH_KEY:-$HOME/.ssh/gasta_oci}"
+SSH_OPTS=(-i "$SSH_KEY" -o StrictHostKeyChecking=accept-new)
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SERVICE="$HERE/../JeevikaService"
 REMOTE_DIR="/opt/gasta"
 
 echo "==> tag: $TAG"
+
+# ⚠️ JDK 17, explicitly. The build's enforcer plugin refuses anything else
+# because Lombok 1.18.42 stops generating getters on a newer JDK *without
+# saying so* — which surfaces as hundreds of "cannot find symbol" errors in
+# files nobody touched. This script hit exactly that on its first run, because
+# a login shell's default JDK is not necessarily the project's.
+#
+# An already-correct JAVA_HOME wins, so a machine with a different layout does
+# not need this edited.
+if [[ -z "${JAVA_HOME:-}" || ! -x "${JAVA_HOME}/bin/javac" ]]; then
+	for candidate in "/c/Program Files/Java/jdk-17" "/usr/lib/jvm/java-17-openjdk-arm64"; do
+		[[ -x "$candidate/bin/javac" ]] && { export JAVA_HOME="$candidate"; break; }
+	done
+fi
+echo "==> JAVA_HOME: ${JAVA_HOME:-<unset — the enforcer will say so>}"
 
 # ── 1. the jar ───────────────────────────────────────────────────────────
 # Built here rather than in the image: pom.xml pulls three libraries from
@@ -52,19 +71,19 @@ docker buildx build --platform linux/arm64 \
 
 # ── 3. ship ──────────────────────────────────────────────────────────────
 echo "==> copying to $TARGET:$REMOTE_DIR"
-ssh "$TARGET" "sudo mkdir -p $REMOTE_DIR && sudo chown \$(id -u):\$(id -g) $REMOTE_DIR"
-scp "$HERE/docker-compose.yml" "$HERE/Caddyfile" "$TARGET:$REMOTE_DIR/"
-scp "$HERE/gasta-api-$TAG.tar" "$TARGET:$REMOTE_DIR/"
+ssh "${SSH_OPTS[@]}" "$TARGET" "sudo mkdir -p $REMOTE_DIR && sudo chown \$(id -u):\$(id -g) $REMOTE_DIR"
+scp "${SSH_OPTS[@]}" "$HERE/docker-compose.yml" "$HERE/Caddyfile" "$TARGET:$REMOTE_DIR/"
+scp "${SSH_OPTS[@]}" "$HERE/gasta-api-$TAG.tar" "$TARGET:$REMOTE_DIR/"
 
 # Only if absent — see the warning at the top.
-ssh "$TARGET" "test -f $REMOTE_DIR/.env" \
+ssh "${SSH_OPTS[@]}" "$TARGET" "test -f $REMOTE_DIR/.env" \
 	&& echo "==> .env already on the server, left alone" \
 	|| { echo "==> no .env on the server; copying the template — FILL IT IN THEN RE-RUN"; \
-	     scp "$HERE/.env.example" "$TARGET:$REMOTE_DIR/.env"; exit 1; }
+	     scp "${SSH_OPTS[@]}" "$HERE/.env.example" "$TARGET:$REMOTE_DIR/.env"; exit 1; }
 
 # ── 4. load and restart ──────────────────────────────────────────────────
 echo "==> loading and restarting"
-ssh "$TARGET" "cd $REMOTE_DIR \
+ssh "${SSH_OPTS[@]}" "$TARGET" "cd $REMOTE_DIR \
 	&& docker load -i gasta-api-$TAG.tar \
 	&& rm -f gasta-api-$TAG.tar \
 	&& GASTA_TAG=$TAG docker compose up -d --remove-orphans \
@@ -76,7 +95,7 @@ rm -f "$HERE/gasta-api-$TAG.tar"
 # Asking the server rather than trusting `up -d`, which returns as soon as the
 # containers are *created*.
 echo "==> waiting for health"
-ssh "$TARGET" "cd $REMOTE_DIR && for i in \$(seq 1 40); do \
+ssh "${SSH_OPTS[@]}" "$TARGET" "cd $REMOTE_DIR && for i in \$(seq 1 40); do \
 	s=\$(docker inspect --format '{{.State.Health.Status}}' gasta-api-1 2>/dev/null || echo none); \
 	echo -n \"\$s \"; \
 	[ \"\$s\" = healthy ] && { echo; exit 0; }; \

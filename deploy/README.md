@@ -41,6 +41,29 @@ should print nothing.
 deployment installs fine and then fails every request on a real phone, with a
 network error that says nothing about why.
 
+## The live server
+
+| | |
+|---|---|
+| API | **https://yapan.duckdns.org** |
+| Health | `curl https://yapan.duckdns.org/api/v1/yapan/common/health` |
+| Host | `ubuntu@140.238.248.77` · Ampere A1 · 2 OCPU / 12 GB · Ubuntu 24.04 aarch64 |
+| Region | `ap-mumbai-1`, AD-1 |
+| SSH key | `~/.ssh/gasta_oci` (created for this; **not** the OCI API key) |
+| OCI CLI | `~/.oci/config`, key at `~/.oci/oci_api_key.pem` |
+| Stack | `/opt/gasta` on the server |
+
+⚠️ **SSH is restricted to one IP** — the machine this was set up from. A home
+connection's address changes; when SSH starts timing out, that is why, not the
+server being down. To move it:
+
+```bash
+oci network security-list update --security-list-id <id> --force   --ingress-security-rules file://ingress.json     # edit the /32 first
+```
+
+The security list id is in the OCI console under the VCN `gasta-vcn`, or from
+`oci network vcn get --vcn-id <id> --query 'data."default-security-list-id"'`.
+
 ## First-time server setup
 
 Ubuntu 24.04 (arm64) on an `VM.Standard.A1.Flex`, 2 OCPU / 12 GB.
@@ -51,12 +74,22 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker "$USER"   # log out and back in
 
 # ⚠️ Oracle's Ubuntu images ship iptables rules that drop everything except
-# SSH, in ADDITION to the cloud-side Network Security Group. Both have to
-# allow 80 and 443 or Let's Encrypt's challenge never arrives — and the
-# symptom is a certificate that silently never issues.
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+# SSH, in ADDITION to the cloud-side security list. Both have to allow 80 and
+# 443 or Let's Encrypt's challenge never arrives — and the symptom is a
+# certificate that silently never issues.
+#
+# ⚠️⚠️ The position is found, not assumed. Every guide on the internet says
+# `-I INPUT 6`, which is right for Oracle's older rule set and WRONG for the
+# 24.04 image, where the REJECT sits at line 5 — so the new rules land after
+# it and are never reached. This was got wrong once here, on this VM, and the
+# rules looked perfectly correct in `iptables -L` while doing nothing.
+REJ=$(sudo iptables -L INPUT -n --line-numbers | awk '$2=="REJECT"{print $1; exit}')
+sudo iptables -I INPUT "$REJ" -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo iptables -I INPUT "$REJ" -m state --state NEW -p tcp --dport 80 -j ACCEPT
 sudo netfilter-persistent save
+
+# Confirm 80 and 443 appear ABOVE the REJECT line:
+sudo iptables -L INPUT -n --line-numbers
 ```
 
 Then, on this machine:
@@ -99,7 +132,7 @@ Point the app at it with nothing — `flutter run` already defaults to
 ## Building the app against the server
 
 ```bash
-flutter build apk --release --dart-define=GASTA_API_BASE=https://gasta.duckdns.org
+flutter build apk --release --dart-define=GASTA_API_BASE=https://yapan.duckdns.org
 ```
 
 ⚠️ It must be `https://`. See the TLS note above.

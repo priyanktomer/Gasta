@@ -686,7 +686,7 @@ translating.
 
 ---
 
-## Phase 6 — A Today tab, and notifications to a bell
+## Phase 6 — A Today tab, and notifications to a bell ✅ done 2026-08-25
 
 **Goal.** Put the most-used screen in the bottom bar.
 
@@ -736,6 +736,49 @@ dual-role user sees both halves at once. Don't move the money screens; people
 have learned where they are. Changing tab *membership* per role (rather than
 order) is a bigger step — later, if at all, because a bar that differs between
 two people discussing the app is a support cost.
+
+### What was built
+
+`TodayScreen`, deliberately thin: each row carries the one action today asks for
+and nothing else, and anything more opens the screen that already does it
+properly. Rebuilding the visit card here would have left the app with two
+versions of it to keep in step.
+
+**Both roles on one screen.** The household's half needed a backend endpoint —
+`GET /organiser/get-my-visits`, the mirror of the earner's, same query and same
+DTO with the other party. Before it, a household with three workers opened three
+screens to find out who was coming. It lives on `EarnerService` because a copy on
+the other service would be a second place to forget the two occurrence safety
+nets that path runs.
+
+**The bell.** `NotificationBell` fetches its own count and opens the list, on
+Home, the Earning Zone, Dashboard, Today and Profile. The Dashboard's existing
+bell **had no tap handler at all** — it drew the icon and the badge and gave you
+no way to see what had happened. That one is gone.
+
+**A sixth icon.** `today.svg`, a calendar with one day filled, in the same 24×24
+1.5-stroke style as the other five. It has to be told apart at a glance from
+job_sheet's circled tick, because this bar is navigated by picture. It also has
+to be **listed in `pubspec.yaml`** — assets are enumerated one by one there, and
+the first build drew a blank space where the icon should have been.
+
+### The tab order
+
+Today takes the middle slot in every mode; Dashboard keeps its place in the bar
+but gives up the centre, because it is read weekly and Today is read daily.
+
+| Mode | Order |
+|---|---|
+| hire | Home, **Today**, Dashboard, Profile, Work |
+| work | Work, **Today**, Home, Dashboard, Profile |
+| both | Home, Work, **Today**, Dashboard, Profile |
+
+### Verified in the emulator
+
+Today is one tap from anywhere and shows today's and tomorrow's visits with the
+right action on each; the bell opens the list with its 121 unread intact; the
+badge is correct; the new icon is distinct in the bar; all of it in Hindi at
+720px with nothing clipped.
 
 ---
 

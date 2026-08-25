@@ -782,7 +782,7 @@ badge is correct; the new icon is distinct in the bar; all of it in Hindi at
 
 ---
 
-## Phase 7 — Icons and infographics ✅ mostly done 2026-08-25
+## Phase 7 — Icons and infographics ✅ mostly done 2026-08-25 (one illustration left)
 
 **Goal.** Make the app readable by picture, not only by word.
 
@@ -865,16 +865,44 @@ chips that carry ₹ in their own text lost the icon.
 Notification rows already carried a type icon, so that part of step 4 was
 already true.
 
-### Not done — two of the four infographics
+### The work record card ✅ done 2026-08-25
 
-- **The work record as something you can show someone** (§7.4). Still plain text
-  for WhatsApp. A card with profession icons, years, visit count and rating,
-  designed to be read across a bank counter, is worth more than anything else
-  left in this phase — and it is a real design piece, not a sheet of panels.
-- **Crew jobs**, one line of illustration for all-or-nothing.
+**`work_record_card_screen.dart`** — the §7.4 piece, and the one the phase said
+was worth more than anything else left in it.
 
-Both need drawing rather than composing, which is why they are named here rather
-than half-built.
+**It is designed to be read across a bank counter**, by somebody on the other
+side of it who has never used this app, and that single sentence decided the
+whole layout: three numbers rather than a paragraph, each big enough to read at
+arm's length, with its label *under* it rather than beside it — a label with a
+number after it is a sentence, and a sentence is what somebody skimming a card
+across a counter does not read. A drawn border rather than a shadow, because
+this is held out at arm's length and often outdoors, where a soft shadow simply
+is not there.
+
+**The professions carry icons**, matched on keywords in the name rather than a
+table of all fifty-odd: the names arrive from the server as English prose
+(Phase 14 item 11), so an exact map would be a second list to maintain and
+wrong the day somebody renames one. The generic work badge is the fallback and
+is not a failure.
+
+**The card says nothing here was typed by hand.** A record somebody could have
+written themselves is worth nothing to the person reading it, so the footer
+answers the question the reader will actually have: these are Gasta's records of
+work the *household* marked done.
+
+**The name comes off the device**, from the saved-accounts store the switcher
+already keeps, rather than from a request — a card opened to show to somebody
+standing there should not wait on the network to put a name on itself.
+
+What it replaced: a tinted box on the earnings screen with two sentences
+composed in English, and a WhatsApp share whose text was also composed in
+English regardless of the sender's language. Both now come from the ARB, with
+ICU plurals so "1 people" and "1 लोगों" stop happening.
+
+### Still not done — one of the four infographics
+
+- **Crew jobs**, one line of illustration for all-or-nothing. Needs drawing
+  rather than composing, which is why it is named here rather than half-built.
 
 ---
 

@@ -107,7 +107,7 @@ golden flows in `integration_test/`, which need a device. **60 backend tests and
 | 11 — Scale & hardening | ◐ T11.8 file storage, T11.11 remainder |
 | §E — Doorstep | ✅ Complete |
 | §F — Design system | ✅ Adopted |
-| §G — Success gaps | ◐ §7.6 blocked, §7.8 handover → Phase 13 |
+| §G — Success gaps | ◐ §7.6 blocked; §7.8 handover ✅ Phase 13 |
 
 **Phase 1 is done and merged** (2026-08-24) — 60 backend + 27 app tests, CI on
 both repos, seed data, and a migration chain that can finally build a database
@@ -1218,7 +1218,7 @@ existing and tested code, but the end-to-end wait was not sat through.
 
 ---
 
-## Phase 13 — The handover
+## Phase 13 — The handover ✅ done 2026-08-25
 
 **Goal.** "She is leaving on the 30th."
 
@@ -1233,11 +1233,98 @@ a handover work**, and it is worth paying for.
 
 **Size:** M.
 
+### What was built
+
+`HandoverNotice` + `V14__handover_notice.sql`, `HandoverService` /
+`HandoverServiceImpl`, four endpoints (`give-notice`, `withdraw-notice/{id}`,
+`get-notice`, `post-replacement/{id}`), `closeElapsedNotices()` on the nightly
+retention sweep, `GiveNoticeSheet`, the household's banner on
+`task_visits_screen`, the notice state and withdraw control on
+`earner_tasks_screen`, and 17 ARB strings in both languages.
+
+**The migration was written before the entity, deliberately.** Phase 9 did it
+the other way round and `ddl-auto=update` created the columns first, nullable
+and without defaults; Flyway then failed on a duplicate column, wrote
+`success=0` into `flyway_schema_history` and took down every `@SpringBootTest`
+in the suite.
+
+**Three days is the default overlap and it is a judgement, not a calculation.**
+One day is a tour of the kitchen; a week is a household paying two people for
+work one can do. Three is enough to be shown the routine on a normal day and be
+watched doing it on the next. The household can move it — the constant is only
+what the field is filled in with when nobody says otherwise. The app duplicates
+the number to *show* the date before it is sent; the server's value wins, so if
+the two ever disagree the screen is wrong and the data is right.
+
+**A notice for today is refused, not accepted-and-flagged.** Leaving today is a
+real thing people do and the app already has a button for it. Calling it a
+handover would put a replacement search on a clock that has already run out —
+and the refusal says so in those words rather than "invalid date".
+
+**The row survives everything.** Completed and withdrawn notices both stay:
+"who worked here before, and why did they go" is asked months later, and the
+answer should not depend on somebody having tidied up. Which is also why there
+is no unique key on `TASK_ID` — an engagement can be given notice on, have it
+withdrawn, and be given notice on again. The service enforces one *live* notice
+at a time, which is a different rule and belongs there.
+
+**`postReplacement` reuses `rebook-task`** rather than growing a second way to
+post the same job, with the previous-worker window set to zero — rebook gives
+the outgoing worker first refusal, which is exactly wrong for their replacement.
+
+**Only the household can post it.** The outgoing worker sees that a replacement
+is being looked for and cannot start the search in somebody else's name.
+
+**The sweep only closes the notice; it never ends the engagement.** A last day
+passing means the notice has been worked through, not that the app should
+delete somebody's job for them.
+
+### Two defects found by running it
+
+**The earner's button was a dead end.** After giving notice it still read "I am
+leaving — give notice", and the server refuses a second notice on the same job —
+so the only control on the card was one that always failed, and a notice given
+in a bad week could not be taken back in a good one. The card now fetches the
+notice when it expands (once per task, not once per row on every load) and shows
+the last day, the overlap line and "I am staying after all" in its place.
+
+**An assigned task could not reach its own visit schedule.** `posted_tasks_screen`
+checked `openToQuote` before `assigned`, and a task can be both — task 9 in the
+dev data is. The card drew "Tap to see visits & code" (that line is drawn on
+`assigned`) and then opened the quote list, so the schedule, the start code and
+confirm-done were unreachable for that task by any route. Found while trying to
+open the household's half of this phase. One-line reorder; the comment above it
+now says why the order matters.
+
+### Verified
+
+Emulator, Hindi, 720×1280: earner gives notice → picker refuses today and
+everything before it, first selectable day is tomorrow → overlap line appears
+with the date → reason optional → row lands in `handover_notice` with
+`OVERLAP_FROM` three days back → withdraw stamps `WITHDRAWN_AT` and keeps the
+row → notice given again → household opens the task and sees "Ramesh Kumar 30
+Aug को काम पूरा करेंगे / 5 दिन बाकी / नया व्यक्ति 27 Aug से शुरू कर सकता है" →
+"find someone to take over" posts task 19 and links it → banner switches to "a
+replacement has been posted" and the button goes. Test data removed from MySQL
+afterwards.
+
+`HandoverNoticeRulesTest` — 8 cases on a real MySQL, pinning the refusals
+(today, the past, an overlap after the last day, a second live notice, a worker
+posting their own replacement, an outsider giving or reading one) and the
+overlap default and its clamp to today. The happy path is proved in the
+emulator, which is where the screens have to be proved anyway; what that run
+cannot prove is the negative space, and a refusal that stops refusing looks
+exactly like a feature working. Suite 69 → **77/77**. `flutter analyze` clean.
+
 ---
 
-## Phase 14 — Pay off the known issues
+## Phase 14 — Pay off the known issues ✅ mostly done 2026-08-25
 
 Small, independent, safe to do in any gap. Detail in III.B.
+
+**Status: 1, 2, 3, 5, 6, 9, 10 and 11 are done. 4 was deliberately not done —
+see below. 7 is a "consider" and was left. 8 and 12 are blocked on the lawyer
+and on appointing a person.**
 
 1. Delete `Task.amountPaid` (if Phase 4 has not).
 2. Delete the `TaskChat` placeholder — a `@Table` with no `@Entity` is a trap.
@@ -1278,6 +1365,85 @@ Small, independent, safe to do in any gap. Detail in III.B.
 12. **Appoint and configure a Grievance Officer.** `gasta.legal.grievance-*` are
     blank; the complaint screen degrades to showing the SLAs with no name on
     them. The IT Rules 2021 require a named person with a contact address.
+
+---
+
+### What was done
+
+**1.** `Task.amountPaid` went with Phase 3's V12.
+
+**2.** `TaskChat` deleted — a `@Table` with no `@Entity` is a trap: it looks
+mapped, is not, and the next person to "fix" it by adding `@Entity` gets a table
+created under them.
+
+**3.** `get-statements` and `pause-task` deleted, controller through service
+through interface, plus their two dead constants in the app. Neither had a
+caller; the register already shows the month and `skip-visits` already pauses by
+date range.
+
+**5.** **119 messages** across 13 files stopped putting exception text in front
+of users. Every one built its message as `"Could not do X: " + e.getMessage()`,
+so what a person read was a constraint name or a JDBC error — nothing they can
+act on and rather a lot about the deployment. The detail was never lost:
+`errorResponse` takes it as a separate `payload` argument and every one of these
+was already passing it there too. The concatenation was duplication into the
+wrong field.
+
+**6.** `CacheService.evictOldEntries()`, run unawaited at launch. Every
+`fetchInto` with a cacheKey writes two `SharedPreferences` entries keyed by id —
+`REGISTER_9_2026-08`, one per task per month — and nothing ever removed them, so
+the file grew for the life of the install on the cheapest phones in the market.
+Thirty days, keyed off the `_AT` stamps and removing **pairs**: walking the value
+keys would leave the stamps behind, which is how a cache-clearing routine ends up
+growing the file it was written to shrink. `SharedPrefService` gained `keys()`
+and a real `remove()` — the old `invalidate` wrote `''`, which is fine for
+invalidating and useless for reclaiming space.
+
+**9.** `purgeDeletedAccounts()` on the nightly sweep. Phase 2's deletion kept
+`USERNAME` — the phone number — because the IT Rules 2021 require registration
+data for 180 days after cancellation, and nothing cleared it afterwards. It is
+replaced with a `deleted-{id}` tombstone rather than null, because the column is
+NOT NULL and unique and every foreign key points at it: the personal data goes
+and the shared records stay attached to a row that identifies nobody. Idempotent
+by that prefix, since the profile rows live forever.
+
+**10.** `CashAdvanceDto`. The three advance endpoints returned `CashAdvance`
+whole, dragging `UserData` — `email`, `authorities`, `password` — with it. The
+app reads seven fields; it sends seven now.
+
+**11.** The **`Slot` half**, four labels, without item 4 (below). Professions
+too still send English prose and need a translations table — unchanged.
+
+### ⚠️ Item 4 was deliberately not done
+
+The trim is listed under "small, independent, safe" and on inspection it is none
+of the three.
+
+What is true: 38 values, two naming schemes, and only **E_1, E_2 and E_4** exist
+anywhere in the database. `ProfessionRuleDto` hardcodes
+`List.of(E_1, E_2, E_3, E_4)`, so the other 34 are genuinely unreachable.
+
+What that costs to remove: `SlotLabelTest` pins `C_0700_1100`, `C_0730_1130` and
+`D_12_20` — three real defects where a label was wrong by up to sixteen hours —
+and `assertLabelMatchesName()` guards the whole A/B/C/D scheme. Trimming deletes
+34 values **and** the guard **and** the test that documents why the guard exists,
+in exchange for less bloat. The E_* labels carry no times, so nothing survives
+for the mechanism to check.
+
+And the reason the plan wanted it first — that translating 34 unused labels is
+work thrown away — **does not need it**. The app maps the four codes it knows and
+falls through to the server's label for anything else, exactly as `_statusLabel`
+already does for job status. So item 11's Slot half is done and item 4 is not,
+which is the outcome the plan wanted by a route that risks nothing.
+
+Do the trim when somebody has decided the A/B/C/D scheme is never coming back.
+It is a product decision, not a cleanup.
+
+### Item 7 — left alone
+
+Splitting `OrganiserServiceImpl` (~2,400 lines) is a "consider", not a defect,
+and a large mechanical reshuffle of the file where three of last session's bugs
+lived is not something to do at the end of a long pass without a reason to.
 
 ---
 

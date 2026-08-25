@@ -26,6 +26,7 @@ Clone them as siblings inside this folder and the paths in the plans work.
 | **PLAN-4.md** | The product thesis, the architecture, and the rules learned the hard way. §1–§4 are still current. |
 | **PLAN-3.md** | The detailed history — every item's reasoning and every defect found. |
 | **DESIGN-RULES.md** | Binding UI rules. |
+| **OBSERVATIONS.md** | Defects and questions noticed while doing something else. Nothing here is scheduled; some are two-minute fixes and some are product decisions. Add to it rather than mentioning a thing once and losing it. |
 | **AUDIT.md**, **DEFERRED.md**, **PLAN.md**, **PLAN-2.md** | Earlier phases, kept for provenance. |
 
 Phase 0 is not code and should be started now: **database backups** (an hour of

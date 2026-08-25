@@ -964,7 +964,7 @@ connections"*, kill the stray `java.exe` processes; it is not a code fault.
 
 ---
 
-## Phase 9 — Fairness both ways
+## Phase 9 — Fairness both ways ✅ done 2026-08-25
 
 **Goal.** Measure household reliability the way worker reliability is measured.
 
@@ -995,6 +995,46 @@ that the worker is a person with a livelihood cannot measure only her failures.*
 moves and shows on the Phase 8 profile.
 
 **Done when:** both sides' reliability is visible on the same terms.
+
+### What was built
+
+`VISITS_CANCELLED_LATE` and `ENGAGEMENTS_ENDED_BY_THEM` on `user_reputation`
+(V13), mirroring the two counters that were only ever about the worker.
+
+**Short notice is owned in one place** — `ReputationServiceImpl.SHORT_NOTICE_DAYS`
+— and it is two days: the day before, or the day itself. A visit called off a
+week ahead records nothing, because that is a schedule change; one called off at
+dawn is a lost day, and the two must not share a counter. `skip-visits` asks the
+service rather than deciding for itself.
+
+**Ending an engagement counts against whoever ended it.** `endAssignment` already
+had the comment explaining why the earner's counter must not move when a
+household lets her go; the same reasoning, run the other way, is the new branch.
+
+On the Phase 8 profile the two appear as ordinary rows: same shape, same colour,
+hidden at zero, never a rate.
+
+**Step 3 — the expectation, stated before the fact.** Cancelling today or
+tomorrow now shows what it costs her ("she may already have travelled, or turned
+down other work") and what happens ("no charge — but this is recorded on your
+profile, the same way a missed day is recorded on hers"). The app's window and
+the backend's are the same two days, deliberately: warning about something that
+is not recorded, or recording something not warned about, would be worse than
+either alone.
+
+### ⚠️ What this ran into, and Phase 11 should note
+
+**`ddl-auto=update` beat Flyway to the columns.** Adding the fields to the entity
+made Hibernate create them on the next devtools restart — nullable, no default —
+and V13 then failed with *"Duplicate column name"*, leaving `success=0` in
+`flyway_schema_history` and taking the whole context down: every
+`@SpringBootTest` failed to start, five tests with it.
+
+Repaired by dropping the Hibernate-made columns and deleting the failed history
+row, after which V13 applied with the definition it actually specifies
+(`NOT NULL DEFAULT 0`). **The order matters: write the migration before the
+entity, or restart with `ddl-auto=none` in between.** This is the strongest
+argument yet for Phase 11's `ddl-auto=validate`.
 
 ---
 

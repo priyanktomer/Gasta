@@ -93,6 +93,10 @@ temporary because it is. Roughly ₹700–900/year.
 
 Nine entries, three fixed. The open ones worth pulling forward:
 
+- **O-10** ⚠️ — "Set as home address" and "Delete address" confirmed work that
+  never happened; there are no such endpoints. The controls are removed for now.
+  Rebuilding them needs a decision about deleting an address a live task points
+  at, which is a data question, not a UI one.
 - **O-1** — sign-up rejects every email that is not Gmail or Outlook
   (`SignUpDto.java:27`). A product decision, not a bug, but it turns people away
   at the second screen with a message that reads like their address is invalid.

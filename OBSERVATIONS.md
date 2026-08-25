@@ -20,6 +20,40 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-10. ⚠️ "Set as home address" and "Delete address" did nothing at all
+
+Found while translating `address_screen.dart`. Both menu items ran a handler
+that called **`GET /get-user-address`** — the *list* endpoint — and then showed
+`"Address marked as home."` or `"Address deleted."` regardless of what came
+back. One of them still carried a `// Optional: Refresh address list` note, so
+the list did not even reload to reveal that nothing had changed.
+
+**There are no such endpoints.** The server's only address routes are
+`add-address`, `get-user-address` and `get-user-address/{id}`. Nothing on the
+backend can set a home address or delete one.
+
+So the app confirmed, twice, work that nobody did — including a **delete**, the
+one action where a false confirmation is worst, because the user stops looking
+for the thing they think they removed.
+
+**Done for now:** the two menu items and their handlers are removed. A control
+that reports success for work nobody did is worse than no control, and removing
+it is trivially reversible. The `adSetHome` / `adDelete` strings are kept in the
+ARB for when it comes back.
+
+**To actually build it** — and it should be built, "which of these is my home"
+is a real need:
+
+- `PATCH /set-home-address/{id}` and `DELETE /address/{id}` on the server.
+- A decision about **deleting an address a live task points at.** Refuse?
+  Soft-delete? Reassign? A hard delete would orphan visits, and the work record
+  is the thing this product exists to protect.
+- The list must refresh afterwards.
+
+**Size:** small on the app, a real design question on the server.
+
+---
+
 ### O-1. Sign-up rejects every email except Gmail and Outlook
 
 **Correction:** the rule is **server-side**, not in the app.

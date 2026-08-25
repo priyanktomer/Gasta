@@ -1103,7 +1103,7 @@ profile starts against a real database.
 
 ---
 
-## Phase 12 — The posting flow: scheduling, instant hire, and choosing
+## Phase 12 — The posting flow: scheduling, instant hire, and choosing ✅ steps 1–4 done 2026-08-25
 
 **Goal.** Make posting a job easier, and make instant hire something that
 *happens* inside scheduling rather than a separate thing to find.
@@ -1167,6 +1167,54 @@ either wired or deleted rather than parked.
 
 **Do not.** Don't add an "instant hire?" toggle the organiser has to reason
 about — the whole point is that choosing *today, now* already says it.
+
+### What was built (steps 1–4)
+
+**No toggle.** `isInstantHire` is a getter over the schedule: repeat is *Once*,
+the date is today, and the chosen time is within the next two hours. "About now"
+rather than exactly now, because the clock defaults to the current time and a
+person spends a minute or two in the wizard — a strict comparison would stop
+being true while they filled the form in.
+
+**The Rapido/Uber question**, appearing only when the schedule already said
+"now": *we will start looking straight away* → *how long should this stay open?*
+(30 minutes, 1 hour, 2 hours, until this evening) → *if nobody takes it in that
+time, the job closes and we will tell you.* That last line is the one usually
+left out, and it is the one that decides whether an organiser waits or reposts
+the same job three times.
+
+**`openForMins` is finally sent.** The backend has accepted it and expired on it
+since it was built; the app only ever sent `openForDays`, so a job meant to run
+for half an hour ran until the default.
+
+### D-7 is resolved: wired, not deleted
+
+`post-instant-job` **is** the endpoint this flow calls. The decision was made for
+us by a comment already in `OrganiserServiceImpl`: `addNewJob` passes
+`instantHire = false` *unconditionally*, so that no request body can turn an
+ordinary posting into an instant one — a different product behaviour and a
+different alerting policy. That reasoning is right, which means **the route
+carries the meaning and a body flag cannot**. A first attempt sent
+`hireMode: INSTANT` to `post-new-job`; it would have looked like it worked and
+done nothing.
+
+### Verified in the emulator
+
+Today at the current time shows the block; changing the date to the 29th makes
+it disappear. Both in Hindi.
+
+**Not verified:** letting a 30-minute window actually expire and confirming the
+job closes and the organiser is told. That is `expireOpenTasks`, which is
+existing and tested code, but the end-to-end wait was not sat through.
+
+### Still to do — steps 5 and 6
+
+- **T9.6, replace typing with choosing.** The wizard still asks for free text
+  where a picker would do. Directly serves the low-literacy goal, needs no new
+  dependency, and is a screen-by-screen pass rather than one change.
+- **The scheduling step as a whole.** The repeat/pattern options are the densest
+  part of the wizard, and a job posted for "today, 6am" tomorrow morning is
+  still indistinguishable from one posted for next month.
 
 ---
 

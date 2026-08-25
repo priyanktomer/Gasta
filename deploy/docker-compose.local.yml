@@ -24,6 +24,11 @@ services:
     # This starts none of it while keeping the file valid.
     scale: 0
 
+  # A laptop has no business repointing the live DNS record at itself, which is
+  # exactly what this would do within five minutes of starting.
+  duckdns:
+    scale: 0
+
   api:
     ports:
       - "8080:8080"

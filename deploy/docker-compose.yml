@@ -138,6 +138,35 @@ services:
         limits:
           memory: 512m
 
+  # Keeps the DuckDNS record pointing at whatever address this host currently
+  # has (PLAN-5 Phase 11).
+  #
+  # ⚠️ Worth a container rather than a one-time click. An OCI instance keeps its
+  # ephemeral public IP while it is running, but a stop/start can hand it a new
+  # one — and the symptom of a stale record is not "DNS is wrong", it is the app
+  # failing every request *and* Caddy failing to renew the certificate, both
+  # silently, some weeks apart from the change that caused it.
+  #
+  # No image to build: curl in a loop is the whole program. DuckDNS answers
+  # literally "OK" or "KO", and it infers the address from the request when
+  # `ip=` is empty, which is what makes this five lines instead of fifty.
+  duckdns:
+    image: curlimages/curl:8.9.1
+    restart: unless-stopped
+    environment:
+      DUCKDNS_SUBDOMAIN: ${DUCKDNS_SUBDOMAIN:?set DUCKDNS_SUBDOMAIN in .env}
+      DUCKDNS_TOKEN: ${DUCKDNS_TOKEN:?set DUCKDNS_TOKEN in .env}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        while true; do
+          r=$$(curl -fsS "https://www.duckdns.org/update?domains=$$DUCKDNS_SUBDOMAIN&token=$$DUCKDNS_TOKEN&ip=" || echo FAILED)
+          echo "$$(date -Iseconds) duckdns: $$r"
+          sleep 300
+        done
+    networks: [internal]
+
 networks:
   internal:
     driver: bridge

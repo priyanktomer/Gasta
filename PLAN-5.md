@@ -416,7 +416,7 @@ Backend suite 69/69, `flutter analyze` clean.
 
 ---
 
-## Phase 3 — The wage-payment ledger ⚠️ biggest product hole
+## Phase 3 — The wage-payment ledger ✅ done 2026-08-25
 
 **Goal.** Record whether the wage was actually handed over.
 
@@ -463,6 +463,43 @@ owed vs received.
 two people talking to each other is the fastest way to make a worker distrust the
 app. **Never put Gasta in the payment path** — this is a record, not a payment,
 and that distinction is what keeps the intermediary framing true (III.C.1).
+
+### What was built
+
+`WagePayment` + repo + `V12`, shaped like `CashAdvance` down to the two
+agreement stamps and the dispute stamp. `add-payment`, `respond-payment` and
+`get-payments`, all three wired in the same change. On the register, a **Wage
+paid** card above the Advance card — the order is the point: the money she is
+owed comes before the money she has been lent. `Task.amountPaid` dropped in the
+same migration, since a dead column called AMOUNT_PAID sitting beside a real
+payment ledger is an invitation to wire the wrong one.
+
+Three figures, never combined: what the month came to, what was paid, what is
+still owed on advances.
+
+**`WagePaymentDto`**, not the raw entity. Returning `WagePayment` serialised
+`task`, `earner`, `organiser` and `recordedBy` in full — and `UserData` carries
+`email`, `authorities` and a `password` field. The password is a `"dummyp"`
+placeholder because this product authenticates by OTP, so nothing secret escapes
+today; that is luck, not design. The app reads six fields, so the projection
+sends six.
+
+### Verified in the emulator
+
+Recorded from both sides (the labels turn round: "Got paid" / "Paid the wage",
+"How much did you get?" / "How much did you pay?"); the recording side is stamped
+and the other is left "Waiting", with no answer buttons shown to the person who
+wrote the row; agreeing sets the second stamp and clears any dispute; disputing
+leaves the row in the ledger, still counted in the total, showing "Questioned";
+a month with nothing recorded says **"Nothing yet"** rather than ₹0; a partial
+payment states the remainder. Backend 69/69, `flutter analyze` clean. Test rows
+removed from MySQL afterwards.
+
+### Note for whoever does Phase 14
+
+The **advance** endpoints still return `CashAdvance` raw and leak the same
+`UserData` fields. Not changed here — separate surface, separate verification.
+Item 11 below.
 
 ---
 
@@ -903,7 +940,14 @@ Small, independent, safe to do in any gap. Detail in III.B.
    "deletion" is a soft delete wearing a hard delete's name. Add the sweep to
    `RetentionService`, which already batches by cutoff for notifications, keyed
    on `UserAccountProfile.deletionRequestedAt` (indexed for this).
-10. **Appoint and configure a Grievance Officer.** `gasta.legal.grievance-*` are
+10. **Stop the advance endpoints returning raw entities.** `get-advances`,
+    `add-advance` and `respond-advance` serialise `CashAdvance` whole, which
+    drags `UserData` — `email`, `authorities`, `password` — out with it. The
+    password is a `"dummyp"` placeholder today, so nothing secret leaks; that
+    stops being true the day anybody adds password login. Phase 3's
+    `WagePaymentDto` is the pattern, and the app already reads only seven
+    fields. Check the other endpoints that return entities while you are there.
+11. **Appoint and configure a Grievance Officer.** `gasta.legal.grievance-*` are
     blank; the complaint screen degrades to showing the SLAs with no name on
     them. The IT Rules 2021 require a named person with a contact address.
 

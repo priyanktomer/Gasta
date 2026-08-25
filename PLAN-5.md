@@ -1100,7 +1100,7 @@ an accelerator, not the mechanism.
 
 ---
 
-## Phase 11 — Deployment and store readiness
+## Phase 11 — Deployment and store readiness ◐ backend live 2026-08-26
 
 **Goal.** It can be installed by somebody who is not us.
 
@@ -1128,6 +1128,68 @@ an accelerator, not the mechanism.
 
 **Done when:** a signed build installs from an internal track and the prod
 profile starts against a real database.
+
+### ◐ Steps 1 and 2 done, and the backend is live — 2026-08-26
+
+**https://yapan.duckdns.org** — Ampere A1, 2 OCPU / 12 GB, Ubuntu 24.04 aarch64,
+`ap-mumbai-1`. One VM, five containers, one public port. Provisioned from the
+OCI CLI so the whole thing is re-creatable and reviewable rather than a sequence
+of clicks somebody remembers. Runbook in [deploy/README.md](deploy/README.md).
+
+**Step 1 turned out to be already done.** The migrations written across phases
+2–13 had quietly finished it: 14 of them build a 44-table schema from nothing
+and `ddl-auto=validate` passes. Proven both ways — the prod profile starts clean
+against an empty database, and dropping `handover_notice.OVERLAP_FROM` makes it
+refuse to start naming that exact column. `SchemaBuiltByFlywayOnlyTest` was
+already the standing guard; the comments in both properties files claiming a
+prod start would fail were years-stale and are corrected.
+
+**Step 2** — the literal dev password default is still in
+`application.properties`, deliberately, because local work still needs it. The
+prod profile has no defaults at all, which is the half that matters.
+
+**No load balancer, and that is a decision.** One VM running one application. A
+load balancer balances across two or more backends or terminates TLS somewhere
+the app cannot reach; neither is true. It would have added a NAT gateway (a
+private subnet has no outbound without one), a Bastion for SSH, and OCI
+Certificates with manual rotation — three more things to misconfigure. Caddy
+gets and renews Let's Encrypt certificates itself.
+
+**TLS is not hardening, it is the product working.** `AndroidManifest.xml`
+declares no `usesCleartextTraffic`, so Android 9+ blocks plain HTTP outright. An
+`http://` deployment installs fine and fails every request on a real phone.
+
+**Verified end to end:** from outside, 443 and 80 answer and 8080 / 3306 / 6379 /
+33060 are all refused; SSH is restricted to one address. The app, built with
+`--dart-define=GASTA_API_BASE=https://yapan.duckdns.org`, signed an account up
+over HTTPS — consent rows and all — against the cloud database. The test account
+was removed afterwards.
+
+**Three defects found by doing it**, each of which would have cost an evening:
+
+- `spring.redis.host` was read by **nothing**. Removed in Spring Boot 3.0; this
+  application is on 3.3.3. It worked locally only because Spring's default is
+  `localhost:6379` and every machine that ran this had Redis exactly there.
+- The same bug meant **the test suite never used its Testcontainers Redis** —
+  every `@SpringBootTest` was talking to the developer's own, with a container
+  sitting unused beside it. Suite is 77/77 with it genuinely in use now.
+- The host `iptables` rules landed **after** the REJECT. Every guide online says
+  `-I INPUT 6`, correct for Oracle's older rule set and wrong for the 24.04
+  image where REJECT is at line 5 — so 80 and 443 read as open in
+  `iptables -L` while doing nothing at all.
+
+### Still to do
+
+3. Crash reporting — nothing yet.
+4. Store assets.
+5. Data Safety, privacy policy URL, location justification. **The privacy policy
+   URL can now exist**, which was previously blocked on having a domain.
+6. Signing key, versioning, target SDK.
+
+Plus, from doing the deploy: **CI.** `deploy.sh` ships a ~200 MB tar each time
+because there is no registry. GitHub Actions building the arm64 image into GHCR
+makes deploys incremental — the natural next step, and deliberately not the
+first one.
 
 ---
 

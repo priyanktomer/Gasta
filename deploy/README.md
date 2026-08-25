@@ -151,13 +151,42 @@ While getting DNS right, uncomment `acme_ca` in the `Caddyfile` to use Let's
 Encrypt's staging environment. It issues untrusted certificates but does not
 count against the rate limits, which are per registered domain and unforgiving.
 
-## Backups
+## Backups ✅ running
 
-`scripts/backup-db.sh` in the repo root runs `mysqldump` and verifies the dump
-by restoring it. On the server the database is in a container, so it needs to
-run through `docker compose exec`. Set `GASTA_BACKUP_DIR` to somewhere that is
-not this host — a backup beside the database survives a dropped table and not a
-dead disk, which is the failure it is really for.
+Nightly at **02:17**, via `/opt/gasta/nightly-backup.sh` (committed as
+`deploy/nightly-backup.sh`). Each run: dumps, **proves the dump restores** into
+a scratch schema, prunes to 14 local copies, and uploads the newest to Oracle
+Object Storage.
+
+```bash
+ssh ubuntu@<ip> /opt/gasta/nightly-backup.sh      # run one now
+ssh ubuntu@<ip> tail -20 /opt/gasta/backups/backup.log
+```
+
+It reuses `scripts/backup-db.sh` rather than reimplementing it. That script
+gained one variable for this — `GASTA_DB_EXEC`, a prefix its client runs
+behind — so on the server it becomes `docker compose exec -T mysql mysqldump`
+and **no MySQL port has to be published**. The rotation, the partial-file guard
+and the restore check are the same code in both places, which is the point.
+
+Two things that were only discovered by running it:
+
+- **The verify needs root.** The MySQL image grants the app user rights on its
+  own database and nothing else, so it cannot `CREATE DATABASE` for the scratch
+  schema. The dump succeeded while the verify failed — which is the failure
+  most likely to be mistaken for "backups are fine".
+- **Uploads use instance principals**, so there are no OCI credentials on the
+  server. The instance authenticates as itself through the `gasta-instances`
+  dynamic group, whose policy allows writing objects to `gasta-backups` and
+  nothing else. Copying an API key up would also have worked, and would have
+  put a tenancy-wide credential on the internet-facing host.
+
+To restore, off-host:
+
+```bash
+oci os object get --namespace bmozt1ajpknb --bucket-name gasta-backups   --name db/<file>.sql.gz --file restore.sql.gz
+gunzip -c restore.sql.gz | docker compose exec -T mysql mysql -u root -p<pw>
+```
 
 ## What is not here yet
 

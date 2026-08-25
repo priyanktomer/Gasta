@@ -23,6 +23,22 @@
 #   GASTA_DB_PASSWORD  no default — required
 #   GASTA_BACKUP_DIR   default ./backups   ** put this on another disk **
 #   GASTA_BACKUP_KEEP  default 14
+#   GASTA_DB_EXEC      default empty - a prefix the client runs behind
+#
+# -- RUNNING AGAINST THE DEPLOYED DATABASE ----------------------------------
+# On the server MySQL is in a container and **publishes no port at all**, on
+# purpose (deploy/README.md). Rather than open one just for backups - which
+# would undo the property that no firewall mistake can expose the database -
+# GASTA_DB_EXEC puts the client inside the container instead:
+#
+#   export GASTA_DB_EXEC="docker compose -f /opt/gasta/docker-compose.yml exec -T mysql"
+#   export GASTA_DB_USERNAME=gasta GASTA_DB_PASSWORD=...   # from /opt/gasta/.env
+#   scripts/backup-db.sh --verify
+#
+# `--host=127.0.0.1` then resolves *inside* the container, which is where the
+# server is. Everything else - the rotation, the partial-file guard, the
+# restore check - is the same code, which is the whole point of doing it this
+# way rather than writing a second script that drifts from this one.
 #
 # ── OFF-MACHINE IS THE POINT ────────────────────────────────────────────────
 # A backup on the same disk as the database survives a dropped table and not a
@@ -46,6 +62,12 @@ fi
 # Windows/Git Bash: the MySQL client is usually not on PATH.
 MYSQLDUMP="${MYSQLDUMP:-mysqldump}"
 MYSQL="${MYSQL:-mysql}"
+
+# Word-split into an array rather than left as a string: "$GASTA_DB_EXEC"
+# would be ONE argument, and bash would go looking for a binary literally
+# named "docker compose -f ... exec -T mysql". Empty by default, so the
+# array expands to nothing and a local run is exactly what it always was.
+read -r -a DB_EXEC <<< "${GASTA_DB_EXEC:-}"
 if ! command -v "$MYSQLDUMP" >/dev/null 2>&1; then
   for candidate in "/c/Program Files/MySQL/MySQL Server 8.0/bin"; do
     if [[ -x "$candidate/mysqldump.exe" ]]; then
@@ -80,7 +102,7 @@ trap '[[ -n "${OUT:-}" && ! -s "${OUT:-}" ]] && rm -f "$OUT"' EXIT
 # Handled explicitly rather than by `set -e`, so the guards below are actually
 # reached on failure instead of being skipped.
 set +e
-"$MYSQLDUMP" \
+"${DB_EXEC[@]}" "$MYSQLDUMP" \
   --host="$HOST" --port="$PORT" --user="$USER" --password="$GASTA_DB_PASSWORD" \
   --single-transaction --quick --routines --triggers --events \
   --set-gtid-purged=OFF \
@@ -115,7 +137,7 @@ if [[ "${1:-}" == "--verify" ]]; then
   echo "→ verifying by restoring into ${CHECK}"
 
   run_sql() {
-    "$MYSQL" --host="$HOST" --port="$PORT" --user="$USER" \
+    "${DB_EXEC[@]}" "$MYSQL" --host="$HOST" --port="$PORT" --user="$USER" \
       --password="$GASTA_DB_PASSWORD" --batch --skip-column-names -e "$1" 2>/dev/null
   }
 
@@ -124,7 +146,7 @@ if [[ "${1:-}" == "--verify" ]]; then
   # rewritten on the way in rather than restored over the live database.
   gunzip -c "$OUT" \
     | sed "s/\`${NAME}\`/\`${CHECK}\`/g" \
-    | "$MYSQL" --host="$HOST" --port="$PORT" --user="$USER" \
+    | "${DB_EXEC[@]}" "$MYSQL" --host="$HOST" --port="$PORT" --user="$USER" \
         --password="$GASTA_DB_PASSWORD" "$CHECK" 2>/dev/null
 
   SRC=$(run_sql "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='${NAME}';")

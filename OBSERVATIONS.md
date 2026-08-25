@@ -149,16 +149,17 @@ server. Worth doing before the domain points at anything real.
 
 ---
 
-### O-7. The clock picker reads "PM 11:25"
+### O-7. ~~The clock picker reads "PM 11:25"~~ — looked at, and it is not a bug
 
-`digitalClockPicker` in the posting wizard puts the meridiem before the time.
-Every clock in the world puts it after.
+`digitalClockPicker` renders `selectedTime.format(context)`, which asks
+`MaterialLocalizations` for the pattern. **Hindi genuinely puts the meridiem
+first** — so the order is the locale doing its job, not the widget getting it
+backwards, and forcing English ordering onto a Hindi screen would be the actual
+defect.
 
-**Why it matters** more than it looks: this is the field that decides whether a
-job is an instant hire, on the screen a household uses to ask for help *now*.
-It is also very large and very prominent, so the oddity is not subtle.
-
-**Size:** trivial.
+What is worth a second look is that the marker rendered as the English "PM"
+rather than अपराह्न. That is a localisation-data question, not a layout one.
+Left here because "we looked at this and it was fine" is worth writing down.
 
 ---
 

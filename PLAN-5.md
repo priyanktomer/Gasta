@@ -782,7 +782,7 @@ badge is correct; the new icon is distinct in the bar; all of it in Hindi at
 
 ---
 
-## Phase 7 — Icons and infographics
+## Phase 7 — Icons and infographics ✅ mostly done 2026-08-25
 
 **Goal.** Make the app readable by picture, not only by word.
 
@@ -830,6 +830,51 @@ doorstep order through every status and confirm each has its own icon.
 
 **Done when:** no two unrelated professions share an icon, and no status is
 distinguished by colour alone.
+
+### What was done
+
+**1. The wrong icons — fixed, and the cause with them.** There is no icon column
+on `profession`: `IconServiceImpl.fileNameFor` derives the filename from the
+name, so a profession without a matching SVG resolves to nothing. Three of the
+four doorstep services had no file, and `doorstep_services_screen` fell through
+to a hardcoded `dry_cleaning_outlined` left over from when the screen was
+laundry-only — so the grid showed a clothes hanger three times out of four.
+Three SVGs added (jerrycan, gas cylinder, hanger), and **the placeholder is
+neutral now**, so the next profession added without an icon looks like no icon
+rather than like laundry.
+
+**2. Status has an icon everywhere.** `AppStatus` had carried one per status all
+along; two of the three chips in the app drew only the colour. One `StatusChip`
+component now, icon + label + tint + border, used by the visit card and the
+doorstep orders list.
+
+**3. The register explainer**, which the plan rightly calls the product's core
+idea explained nowhere. `HowItWorksSheet` — three panels of big icon, short
+line, one sentence, the same shape as the register's day legend. It appears once,
+on the screen it is about, at the moment somebody is looking at the thing it
+explains. Not an onboarding carousel at launch: that is read by nobody. **How
+advances work** uses the same sheet from a help button on the advances card,
+because "does this come off my wage by itself" is the likeliest money
+misunderstanding in the app.
+
+**4. T11.11 — "₹ ₹600 / day".** Four places drew `Icons.currency_rupee` beside
+a string that already began with ₹. Each was right on its own and wrong beside
+the other, so the symbol has one owner now: `MoneyText`. The two quote-type
+chips that carry ₹ in their own text lost the icon.
+
+Notification rows already carried a type icon, so that part of step 4 was
+already true.
+
+### Not done — two of the four infographics
+
+- **The work record as something you can show someone** (§7.4). Still plain text
+  for WhatsApp. A card with profession icons, years, visit count and rating,
+  designed to be read across a bank counter, is worth more than anything else
+  left in this phase — and it is a real design piece, not a sheet of panels.
+- **Crew jobs**, one line of illustration for all-or-nothing.
+
+Both need drawing rather than composing, which is why they are named here rather
+than half-built.
 
 ---
 

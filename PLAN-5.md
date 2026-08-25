@@ -503,7 +503,7 @@ Item 11 below.
 
 ---
 
-## Phase 4 — Hindi where the money is
+## Phase 4 — Hindi where the money is ✅ done 2026-08-25
 
 **Goal.** The screens that decide money read in Hindi.
 
@@ -539,6 +539,56 @@ crew accept. Nothing English, nothing clipped.
 **Note.** The five bottom-nav labels **are already localised**
 (होम / काम / ब्यौरा / सूचना / प्रोफ़ाइल). An earlier draft of this plan claimed
 otherwise and was wrong.
+
+**The 183/104 figures above were also stale.** Both ARB files held 69 keys and
+were already in step; the work was never translation of a backlog, it was
+*extraction* — the strings were literals in the screens.
+
+### What was done
+
+**69 → 402 keys**, both files, no gaps. Screens: the attendance register
+(including the advances and wage ledgers), earnings and the work record,
+household, posted tasks, the worksheet, and `earner_tasks_screen` — which was
+not on the plan's list but is the screen a worker opens every morning and the
+only route to the register, so leaving it English meant walking through English
+to reach a Hindi money screen.
+
+Domain vocabulary, because the plan is right that getting these wrong is worse
+than leaving English: पेशगी for an advance, मज़दूरी for a wage (not वेतन, which
+is salaried-office language), हाज़िरी for the register — the word on the paper
+register it replaces. **A native speaker should still read these before
+release.**
+
+### Four defects this turned up
+
+1. **Dates were English whatever the language.** Six `DateFormat(..., 'en')`
+   calls, so the register said "August 2026" over an otherwise-Hindi screen.
+   Unpinning them needs `initializeDateFormatting()` in `main()`, or intl throws
+   on a locale it has no data for — a wrong-language month traded for a crash.
+2. **`L.of(context)` inside `initState`.** The first fetch passes a translated
+   error message, and Dart evaluates that argument before the call, so the
+   lookup ran before the Localizations scope existed. The register threw on
+   open. Six screens moved their first fetch to `didChangeDependencies`.
+3. **A filter pane compared a code against its own translated label.** In Hindi
+   `'Category' != श्रेणी`, so neither tab looked selected and the wrong list
+   showed. Two `static const` maps had the same shape, mixing labels with codes;
+   they are methods now.
+4. **A parameter named `l` shadowed the localisation getter of the same name**
+   in `my_earnings_screen`. Renamed rather than worked around.
+
+### Left in English, deliberately
+
+**Server prose — the plan's step 3, and the one part not finished.** Profession
+names and `Slot` labels come from the database and the `Slot` enum as English
+sentences, so the card still reads "Agricultural Machinery" and "Early Morning
+Slot". The status label was the same problem and *is* fixed, because `Visit`
+already carries the code beside it — the app maps the code and ignores the
+server's words. Professions need a translations table; `Slot` has 38 values of
+which about four are used, so translating it before **Phase 14's trim** would be
+work thrown away. Carried as Phase 14 item 12.
+
+Also left: `DateFormat` patterns, distance-band and filter-pane codes, and
+'1 km'…'9 km' (Latin numerals are DESIGN-RULES §7).
 
 ---
 
@@ -947,7 +997,13 @@ Small, independent, safe to do in any gap. Detail in III.B.
     stops being true the day anybody adds password login. Phase 3's
     `WagePaymentDto` is the pattern, and the app already reads only seven
     fields. Check the other endpoints that return entities while you are there.
-11. **Appoint and configure a Grievance Officer.** `gasta.legal.grievance-*` are
+11. **Translate the server's prose labels.** Profession names and `Slot`
+    labels reach the app as English sentences, so a Hindi card still says
+    "Early Morning Slot". Both need a code the app can map, the way `Visit`
+    already carries `status` beside `statusLabel`. Do `Slot` *after* trimming it
+    (item 4) — 38 values for about four used, and translating the other 34 is
+    work thrown away.
+12. **Appoint and configure a Grievance Officer.** `gasta.legal.grievance-*` are
     blank; the complaint screen degrades to showing the SLAs with no name on
     them. The IT Rules 2021 require a named person with a contact address.
 

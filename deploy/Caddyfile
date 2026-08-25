@@ -1,0 +1,71 @@
+# The only thing on this host the internet can reach (PLAN-5 Phase 11).
+#
+# Caddy is here for one reason that matters more than reverse proxying: it gets
+# and renews a Let's Encrypt certificate by itself, with no cron, no certbot and
+# no renewal that silently stops working in ninety days. **The app cannot use
+# plain HTTP at all** — Yapan's AndroidManifest.xml declares no
+# `usesCleartextTraffic`, so Android 9+ blocks cleartext outright and every
+# request would fail on a real phone. TLS is not hardening here, it is the
+# difference between the app working and not.
+
+{
+	email {$GASTA_ACME_EMAIL}
+	# Staging issues untrusted certificates but does not count against Let's
+	# Encrypt's rate limits, which are per registered domain and unforgiving
+	# while you are still getting DNS wrong. Uncomment for a dry run, then
+	# comment it out and `docker compose restart caddy` for the real one.
+	# acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+{$GASTA_DOMAIN} {
+	# `api` is the compose service name; Docker's DNS resolves it on the
+	# internal network. The port is the container's, not the host's — nothing
+	# publishes 8080 anywhere.
+	reverse_proxy api:8080 {
+		# Without these the application sees every request as coming from the
+		# Caddy container's address. RateLimitService keys on the caller's IP,
+		# so one abusive client would rate-limit everybody at once.
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	# Compresses JSON responses. The audience is on patchy rural mobile data and
+	# the register and earnings payloads are the largest things the app fetches.
+	encode zstd gzip
+
+	header {
+		# The API is consumed by an Android app, never rendered in a browser, so
+		# these cost nothing and close the cases where a response is opened in
+		# one anyway.
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		# Tells browsers to refuse plain HTTP to this host for a year. Set only
+		# once the certificate is genuinely working — while you are still on the
+		# staging CA this will make a browser refuse to talk to you and clearing
+		# it is awkward.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Do not advertise the proxy.
+		-Server
+	}
+
+	# Sized for the app's largest request rather than left unlimited: nothing it
+	# sends is big, and an unbounded body on a 12 GB host is a way to be pushed
+	# over by one request.
+	request_body {
+		max_size 10MB
+	}
+
+	log {
+		output stdout
+		format console
+		# The access log records paths and status codes. It must not record
+		# request bodies: OTPs and phone numbers travel in them.
+	}
+}
+
+# Plain HTTP exists only so Let's Encrypt's HTTP-01 challenge can be answered
+# and so a stray http:// request is redirected rather than refused. Caddy adds
+# this redirect automatically for any site with a hostname — it is written out
+# here so that behaviour is visible rather than assumed.

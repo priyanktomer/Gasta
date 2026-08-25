@@ -1,0 +1,149 @@
+# The whole backend, on one host (PLAN-5 Phase 11).
+#
+# ⚠️ **Only Caddy publishes a port.** MySQL and Redis have no `ports:` at all —
+# not "bound to 127.0.0.1", not "exposed on a high port", none. They are
+# reachable on the `internal` Docker network by service name and nowhere else,
+# so no firewall mistake on the host can expose them. The API is the same: Caddy
+# reaches it over the network, the internet does not.
+#
+# This is one VM running one application. There is no OCI Load Balancer in front
+# of it and that is a decision, not an omission: a load balancer earns its place
+# when it balances across two or more backends, or terminates TLS somewhere the
+# application cannot reach. Neither is true. Adding it would drag in a NAT
+# gateway (a private subnet has no outbound without one), a Bastion for SSH and
+# OCI Certificates with manual rotation — three more things to misconfigure for
+# no benefit today. When there is a second VM, the load balancer goes in front
+# then and nothing below changes.
+
+name: gasta
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and ACME account keys. Losing this volume is not fatal —
+      # Caddy re-issues — but Let's Encrypt rate-limits by domain, so a
+      # container that re-issues on every restart will eventually be refused.
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      # Caddy reads the hostname from here so the same file serves any domain.
+      GASTA_DOMAIN: ${GASTA_DOMAIN:?set GASTA_DOMAIN in .env}
+      # Let's Encrypt emails this address before a certificate expires.
+      GASTA_ACME_EMAIL: ${GASTA_ACME_EMAIL:?set GASTA_ACME_EMAIL in .env}
+    networks: [internal]
+    depends_on:
+      api:
+        condition: service_started
+
+  api:
+    # Built from JeevikaService/Dockerfile, which packages a jar built outside
+    # the image — see the comment at the top of that file for why.
+    image: gasta-api:${GASTA_TAG:-latest}
+    build:
+      context: ../JeevikaService
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # Service names, not addresses. Docker's embedded DNS resolves them on the
+      # `internal` network, so nothing here needs to know an IP.
+      GASTA_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-gasta}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata
+      GASTA_DB_USERNAME: ${MYSQL_USER:?set MYSQL_USER in .env}
+      GASTA_DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      GASTA_REDIS_HOST: redis
+      GASTA_REDIS_PORT: 6379
+      GASTA_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      # The app is not a browser and sends no Origin header, so this matters
+      # less than it looks — but application-prod.properties has no default for
+      # it on purpose, and a wildcard here would undo that.
+      GASTA_ALLOWED_ORIGINS: https://${GASTA_DOMAIN}
+    # The API must not start before the database can answer. `service_started`
+    # would satisfy the dependency the moment mysqld's process exists, which is
+    # some seconds before it accepts connections — and Flyway runs immediately,
+    # so the API would die on the first migration.
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          # The JVM is told 70% of this (MaxRAMPercentage in the Dockerfile).
+          memory: 3g
+
+  mysql:
+    image: mysql:8.0.46
+    restart: unless-stopped
+    # No `ports:`. See the header.
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gasta}
+      MYSQL_USER: ${MYSQL_USER:?set MYSQL_USER in .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      TZ: Asia/Kolkata
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      # The application writes Devanagari and ₹. utf8mb4 is not the default in
+      # every 8.0 image variant and a wrong default is discovered as mojibake in
+      # somebody's name, months later.
+      - --default-time-zone=+05:30
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # Authenticated, not `mysqladmin ping`: ping answers as soon as the socket
+      # is up, which is true well before the server will accept a login.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          memory: 3g
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No `ports:`. See the header.
+    #
+    # A password even though nothing outside this network can reach it. Redis
+    # holds the OTP hashes and the rate-limit counters; "unreachable" and
+    # "unauthenticated" are different guarantees, and only one of them survives
+    # somebody later adding a `ports:` line in a hurry.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

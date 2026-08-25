@@ -1,0 +1,34 @@
+# Run the production stack on this laptop, before it goes anywhere near Oracle.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#
+# ⚠️ **The point of this file is that everything else stays identical.** The
+# same image, the same prod profile, the same `ddl-auto=validate`, the same
+# Flyway chain against an empty database. What changes is only the two things
+# that cannot work on a laptop:
+#
+#  1. Caddy is dropped. It would ask Let's Encrypt for a certificate for a
+#     domain that does not point here, fail the HTTP-01 challenge, and retry
+#     into a rate limit that is counted per domain and lasts a week.
+#  2. The API publishes 8080 on the host, so the emulator and curl can reach it
+#     without a proxy in front.
+#
+# MySQL and Redis still publish nothing. If a local test needs to look inside
+# them, `docker compose exec mysql mysql -u...` goes through the container
+# rather than opening a port that then gets copied to the server by accident.
+
+services:
+  caddy:
+    # `scale: 0` rather than deleting the service: compose has no way to remove
+    # one in an override, and `profiles` would need the base file to opt in.
+    # This starts none of it while keeping the file valid.
+    scale: 0
+
+  api:
+    ports:
+      - "8080:8080"
+    environment:
+      # Caddy is not here to set X-Forwarded-Proto, and nothing local needs the
+      # real origin, so this stays a value the prod profile will accept rather
+      # than a wildcard that would mask a CORS mistake.
+      GASTA_ALLOWED_ORIGINS: http://localhost:8080

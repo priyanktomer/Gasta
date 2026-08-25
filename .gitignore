@@ -26,3 +26,11 @@ Thumbs.db
 
 # ── Scratch ──────────────────────────────────────────────────────────────
 *.log
+
+# ── Deployment secrets (PLAN-5 Phase 11) ─────────────────────────────────
+# Every value in deploy/.env is a credential — database passwords, the Redis
+# password, the ACME contact. deploy/.env.example is the committed template and
+# carries no values.
+deploy/.env
+deploy/*.env
+!deploy/.env.example

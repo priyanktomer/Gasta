@@ -878,7 +878,7 @@ than half-built.
 
 ---
 
-## Phase 8 — The one screen that unlocks four endpoints
+## Phase 8 — The one screen that unlocks four endpoints ✅ done 2026-08-25
 
 **Goal.** Make T7.1 / T7.5 / T7.6 reachable, and show the ID-verified badge.
 
@@ -911,6 +911,56 @@ persists. Confirm a non-party sees only what they should (III.D.4).
 
 **Do not.** Don't show a composite trust *score* — counts beside their context,
 never a number that invites a threshold (T7.7).
+
+### What was built
+
+`PersonProfileScreen`, one screen for both directions — `earner-profile` and
+`organiser-profile` return the same fields, and the symmetry is the point (T7.6:
+the person travelling alone to a stranger's house has more at stake than the one
+opening the door). `FavouritesScreen` for the fourth.
+
+**The ID line is stated either way.** Shown only when true, an absent badge is
+ambiguous — "not checked" or "the app forgot" — and that difference matters to
+somebody deciding whether to open their door. It reads "ID checked by Gasta" or
+"ID not checked yet".
+
+**Counts, no score.** Jobs completed, days missed, left early, and the two
+ratings kept apart with their counts beside them: 5.0 from one person and 4.6
+from forty are not the same claim. A "new" person gets *"nobody has rated them
+yet"* rather than an empty star row, because a blank where a number should be
+reads as a bad number.
+
+### The blocker, and what it cost
+
+The constants for all four endpoints were **already in `constants.dart`** — the
+plan was right that nothing called them, and it turns out nothing had ever been
+missing except the screen. But neither `AttendanceRegisterDto` nor `VisitDto`
+carried the counterpart's **user id**, only their name and phone. So the two
+best entry points — the register and the visit card, where the person's name is
+already on screen — had nothing to navigate with. `counterpartId` added to both;
+nothing new is disclosed, since it is the same person the screen is already
+about.
+
+### Entry points
+
+The register's app bar, the visit card's name row (tappable, with a chevron when
+there is somebody to open), and **"People I book again"** on the profile screen.
+That last one matters most: re-booking the same person is what this product is
+for, and it had no surface at all.
+
+### Verified in the emulator
+
+Opened from the visit card; name, ID line, record and both ratings render in
+Hindi; the favourite/block controls appear only on an earner's profile, because
+the mechanism exists in one direction and a dead button would be worse than
+none.
+
+### Note
+
+MySQL ran out of connections during this phase — repeated `spring-boot:run`
+restarts leave orphaned pools behind, and `max_connections` is reached after
+about a dozen. If the backend will not start and the log says *"Too many
+connections"*, kill the stray `java.exe` processes; it is not a code fault.
 
 ---
 

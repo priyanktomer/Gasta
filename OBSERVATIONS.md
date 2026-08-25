@@ -22,8 +22,11 @@ this and it was fine" is worth as much as the fix.
 
 ### O-1. Sign-up rejects every email except Gmail and Outlook
 
-`signup_screen.dart` refuses anything else with *"Use a Gmail or Outlook email
-address."* Found while signing a test account up against the container stack.
+**Correction:** the rule is **server-side**, not in the app.
+`SignUpDto.java:27` carries
+`@Pattern(regexp = "^[a-zA-Z0-9._%+-]+@(gmail\.com|outlook\.com)$")`, and
+the app only shows the message the server sends back. Found while signing a
+test account up against the container stack.
 
 **Why it matters.** The audience is rural and semi-urban India. Plenty of people
 have a Yahoo address, a Rediff address, an address their employer or college
@@ -40,7 +43,7 @@ stops being used for anything (nothing is sent to it today — OTP is SMS).
 
 ---
 
-### O-2. An expired session returns 500, not 401
+### O-2. ~~An expired session returns 500, not 401~~ ✅ fixed 2026-08-26
 
 Seen in the container logs on first launch with a stale token:
 
@@ -63,7 +66,12 @@ PLAN.md T6.3 already corrected exactly this shape once — a wrong OTP returned
 500 because the access library reports bad credentials that way, and it was
 mapped to 401 in `LoginServiceImpl`. This is the same defect one endpoint over.
 
-**Size:** small, and the same fix as last time.
+**Fixed** in `LoginServiceImpl.refreshToken`, the same way and for the same
+reason as the wrong-OTP branch a few methods above: access-app *throws* for this
+rather than returning a non-200, so it landed in the catch-all. Matched narrowly
+on the message — the only signal the library gives — so a genuine fault is still
+a 500, and anything unmatched is now logged with its stack trace instead of
+disappearing. Deployed.
 
 ---
 
@@ -88,7 +96,7 @@ later than the moment you would rather know.
 
 ---
 
-### O-4. Whole screens are still English, including the two a new user meets first
+### O-4. ◐ Whole screens were still English — mostly fixed 2026-08-26
 
 PLAN-5 Phase 4 was "Hindi where the money is" and reached the money screens. It
 did not reach these, and the gap is most visible exactly where it hurts most —
@@ -98,24 +106,33 @@ Welcome to Gasta · Login to your account*.
 
 Others found while working nearby:
 
-| Screen | What is still English |
+| Screen | State |
 |---|---|
-| `signup_screen.dart` | all of it |
-| `user_account_screen.dart` | Profile · Account Details · Name/Mobile/Email/Role · Home & household · Manage Addresses · People I book again · My household · Money & work · My earnings & work record · My working hours · Tell a friend · Someone invited me · Raise a complaint · Terms and privacy · Delete my account · Logout |
-| `job_sheet_screen.dart` | Dashboard · Organiser · Services Posted · Open/Assigned/Done/Withdrawn · Quotes Received · Earner · Tasks Accepted For · Today/Tomorrow/Later/Completed/Canceled · My Quotations · "2 jobs today" |
-| `task_visits_screen.dart` | the substitute-offer banner · Show code · They haven't come · Not needed · Attendance and pay · Finish engagement |
-| `posted_tasks_screen.dart` | "Earner: {name}" |
-| `grievance_screen.dart` | Raise a complaint · What happened? · Describe the problem · What happens next · Send complaint |
-| login screen | "Terms of Use · Privacy" while everything around it is Hindi |
+| `signup_screen.dart` | ✅ done |
+| `user_account_screen.dart` | ✅ done — 31 strings |
+| `job_sheet_screen.dart` | ✅ done — 33 strings, and the hand-rolled `_plural` replaced with ICU forms |
+| `task_visits_screen.dart` | ✅ done — 59 strings |
+| `posted_tasks_screen.dart` | ✅ done |
+| `grievance_screen.dart` | ✅ done |
+| login screen | ✅ done — and three copies of the legal-document labels became one shared lookup |
+| **everything else** | **not audited.** These were the screens noticed in passing; nobody has walked the whole app counting. |
+
+The ARB files went from 467 keys to **720**, English and Hindi in exact parity.
 
 **Why it matters.** A half-translated app is arguably worse than an English one:
 it looks like it speaks Hindi, so somebody commits to it, and then the screen
 where they have to type their name does not.
 
-**Size:** a screen-by-screen pass. Mechanical, but not small — and each screen
-needs the codes/labels care that the posting wizard needed (see PLAN-5 Phase 12,
-where translating the repeat options would have silently drawn the wrong form
-fields in Hindi only).
+**What is left** is an audit rather than a task: no one has walked every screen
+with fresh eyes to see what was missed. That is a job for somebody using the app
+in Hindi and writing down what jumps out — which is exactly what the next round
+of feedback will be.
+
+**The recurring trap**, worth restating because it caught two screens: text that
+is *composed* cannot be translated. The posting wizard compared against the
+English words on screen to decide which fields to draw; the visits screen glued
+`"$when"` and `", $slot"` onto a sentence with adjacent-string concatenation.
+Both had to be restructured before a single word could be replaced.
 
 ---
 

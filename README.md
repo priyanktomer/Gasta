@@ -22,15 +22,22 @@ Clone them as siblings inside this folder and the paths in the plans work.
 
 | Document | Read it for |
 |---|---|
-| **PLAN-5.md** | **What to do next.** The current entry point, organised as **numbered phases, one per session** — a fresh chat reads Part I plus the one phase it is doing, not the whole file. **Phase 1 is done; start at Phase 2.** |
+| **PLAN-6.md** | **Start here.** What is outstanding after the first deployment — a draft, deliberately, waiting on the product owner's feedback from using the app before anything in it is ordered. |
+| **OBSERVATIONS.md** | Defects and questions noticed while doing something else. Nothing here is scheduled; some are two-minute fixes and some are product decisions. Add to it rather than mentioning a thing once and losing it. |
+| **PLAN-5.md** | **Historical — every phase is done or explicitly parked.** Fourteen phases from a safety net through consent, Hindi, the handover and deployment. Kept because it carries the *reasoning*: read it when you want to know why something is the way it is. |
 | **PLAN-4.md** | The product thesis, the architecture, and the rules learned the hard way. §1–§4 are still current. |
 | **PLAN-3.md** | The detailed history — every item's reasoning and every defect found. |
 | **DESIGN-RULES.md** | Binding UI rules. |
-| **OBSERVATIONS.md** | Defects and questions noticed while doing something else. Nothing here is scheduled; some are two-minute fixes and some are product decisions. Add to it rather than mentioning a thing once and losing it. |
 | **AUDIT.md**, **DEFERRED.md**, **PLAN.md**, **PLAN-2.md** | Earlier phases, kept for provenance. |
 
-Phase 0 is not code and should be started now: **database backups** (an hour of
-work against irreversible loss) and a lawyer for the terms.
+**The backend is live** at https://yapan.duckdns.org — one Ampere A1 VM on
+Oracle Cloud, TLS from Let's Encrypt, nightly backups that are verified by
+restoring and copied off the host. The runbook is
+[deploy/README.md](deploy/README.md).
+
+The two things still waiting on a person rather than on code: **a lawyer** for
+the six legal documents, which ship with DRAFT banners, and **a named Grievance
+Officer**, which the IT Rules 2021 require.
 
 ## Two rules that override everything else
 

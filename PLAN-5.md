@@ -1,7 +1,16 @@
 # PLAN-5 — Gasta
 
-**The entry point for every new session.** PLAN-4 was the previous one;
-everything it left outstanding is either done or carried here.
+> **⚠️ Historical, as of 2026-08-26.** Every phase here is done or explicitly
+> parked, and the backend is deployed. **[PLAN-6.md](PLAN-6.md) is the current
+> entry point.**
+>
+> This file is kept because it carries the reasoning, not the task list. When
+> you want to know *why* `ddl-auto` is what it is, why there is no load
+> balancer, or why the `Slot` enum was not trimmed, the answer is in here.
+
+Was the entry point for every session between 2026-08-24 and 2026-08-26.
+PLAN-4 was the previous one; everything it left outstanding is either done or
+carried here, and what this file leaves outstanding is carried into PLAN-6.
 
 ---
 

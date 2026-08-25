@@ -592,7 +592,7 @@ Also left: `DateFormat` patterns, distance-band and filter-pane codes, and
 
 ---
 
-## Phase 5 — Progressive disclosure on three screens
+## Phase 5 — Progressive disclosure on three screens ✅ done 2026-08-25
 
 **Goal.** Stop single list items from filling the screen.
 
@@ -637,6 +637,52 @@ Check at `textScaler` 1.6 and in Hindi.
 **Do not.** Don't remove any action. Don't add a density setting or a
 customisable home — every preference is a question asked of somebody who opened
 the app to find out what time to arrive.
+
+### What was done
+
+**The visit card.** Collapsed to the facts — profession, status, date, slot,
+address, who, pay — plus at most one action: today's next step. Everything else
+sits behind one **More** that expands in place, so the list never moves under
+her. Nothing was removed.
+
+**The safety pair is the judgement call, and it splits on *where she is*.**
+Once a visit is ON_THE_WAY, ARRIVED or IN_PROGRESS it is not a row in a list any
+more — it is happening — so "I feel unsafe" stays on the collapsed card, where
+her thumb already is. A visit still merely scheduled (she is at home, it is
+tomorrow's work) puts it under More with the rest.
+
+**Job tiles** expand in place to show the description, which was already in the
+list response, so deciding whether a job is worth taking no longer needs a push
+and a back. The full-screen viewer stays — swiping between jobs is good.
+
+**The profile** is three groups: *Home & household* · *Money & work* ·
+*Account & help*.
+
+### One departure from the plan
+
+The plan sketched *Money & work* as (earnings, hours, household) and *Doing
+business* as (provider, orders, addresses). **Addresses and household stayed
+together** instead, under *Home & household* — the file's own comment says why
+they were placed side by side: they answer "where I am and who is there", and
+the person who needs both is the one who books but is not home during the day.
+Splitting them to match the sketch would have made the list worse.
+
+The happy consequence is that the groups fall on boundaries the list already
+had, so this was two cuts and three headings — no tile moved or retyped. A first
+attempt reassembled the tiles programmatically and mangled the `if (_isStaff)`
+wrapper around the ops queue; a list of seventeen actions is not worth rebuilding
+to save two scrolls.
+
+### Verified in the emulator
+
+Two visit cards fit where one used to overflow the screen; expanding grows the
+card in place; the job tile shows its description without leaving the list; the
+profile reads as three groups. Checked in Hindi and at **font scale 1.6** —
+nothing clipped, text wraps rather than truncating.
+
+**Not done:** the profile screen's own strings are still English (its headings
+included). Phase 4's scope was the money path; this screen is the next one worth
+translating.
 
 ---
 

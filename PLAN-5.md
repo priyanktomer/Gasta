@@ -1442,12 +1442,17 @@ and on appointing a person.**
     stops being true the day anybody adds password login. Phase 3's
     `WagePaymentDto` is the pattern, and the app already reads only seven
     fields. Check the other endpoints that return entities while you are there.
-11. **Translate the server's prose labels.** Profession names and `Slot`
-    labels reach the app as English sentences, so a Hindi card still says
-    "Early Morning Slot". Both need a code the app can map, the way `Visit`
-    already carries `status` beside `statusLabel`. Do `Slot` *after* trimming it
-    (item 4) — 38 values for about four used, and translating the other 34 is
-    work thrown away.
+11. **Translate the server's prose labels.** ◐ **Slot done, professions not.**
+    Both reach the app as English sentences, so a Hindi card said "Early Morning
+    Slot". `slotLabel` already mapped the four codes in use; the two pickers in
+    the posting wizard and the one on *add an existing worker* were not calling
+    it and drew the enum's own English `value` instead — fixed 2026-08-25, and
+    safe because all three select by index or identity, never by label.
+    **Profession names are still English** ("Maid", "Agricultural Machinery").
+    The mechanism is the same — a code beside the label — but the fifty-odd
+    translations are a content decision, not a code one: for several the Hindi
+    *is* the common word (मिस्त्री) and for others the English is what people
+    actually say. That needs the product owner, not a guess.
 12. **Appoint and configure a Grievance Officer.** `gasta.legal.grievance-*` are
     blank; the complaint screen degrades to showing the SLAs with no name on
     them. The IT Rules 2021 require a named person with a contact address.

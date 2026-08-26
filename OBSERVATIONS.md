@@ -20,6 +20,42 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-27. Seeding demo data means fighting our own rate limiters
+
+Building the demo scenario took a dozen runs, and most of them failed on the
+OTP limits rather than on anything wrong: **6 OTP requests per phone per hour,
+40 per caller per hour, 5 verifies per phone per 15 minutes**. Each demo account
+costs one of each per run.
+
+⚠️ **I cleared `gasta-rate:otp-*` from production Redis** several times to keep
+going. That is a live system and it is worth writing down: it resets nothing but
+the counters, it affects no user data, and it would be the wrong habit if there
+were real users.
+
+```bash
+sudo docker exec gasta-redis-1 sh -c   'redis-cli -a "$REDIS_PASSWORD" --scan --pattern "gasta-rate:otp-*" | xargs -r redis-cli -a "$REDIS_PASSWORD" DEL'
+```
+
+**The limits are correct** — they are what stops somebody's phone ringing all
+night, and they did their job here. The problem is that a seeding tool and an
+abuse limiter want opposite things from the same endpoint.
+
+**Two ways out, when it next matters:**
+
+- **A dev-only bypass keyed on a header the server only honours off production.**
+  Small, and the kind of thing that leaks into production if it is not guarded
+  by profile rather than by config.
+- **Seed once and never re-run.** Most of my runs were fixing the script, not
+  adding data. A local environment (`docker-compose.local.yml` exists) would
+  have absorbed all of them.
+
+The second is the honest answer: the script should have been debugged against a
+local stack and pointed at production once.
+
+**Size:** none today. Worth a note before anybody seeds again.
+
+---
+
 ### O-26. "Any" on the distance filter means 25 km, not any
 
 The Earning Zone's widest band is labelled **Any**. It is not: `DistanceBucket`

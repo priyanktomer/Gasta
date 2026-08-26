@@ -219,10 +219,15 @@ def ensure_address(api, name, index, state, centre, city):
     return None
 
 
-def post_jobs(api, catalog, address_id, index):
-    """Two jobs in different professions, so the list has a spread."""
+def post_jobs(api, catalog, address_id, index, count=2, first_day=2):
+    """Jobs in different professions, so the list has a spread.
+
+    `first_day` is how many days ahead the first one is scheduled. Zero puts
+    work on **today**, which is the only way the Today tab has anything in it —
+    everything else lands under "later" and that screen stays empty.
+    """
     posted = 0
-    for n in range(2):
+    for n in range(count):
         title, description = JOBS[(index * 2 + n) % len(JOBS)]
         profession = catalog[(index * 3 + n) % len(catalog)]
         # Open to quotes rather than instant: more of the app sits behind that
@@ -243,7 +248,7 @@ def post_jobs(api, catalog, address_id, index):
                 # @JsonFormat("yyyy-MM-dd HH:mm:ss.SSS"), so ISO-8601 with a 'T'
                 # is rejected — and Spring answers "The request could not be
                 # read", which says nothing about which field is wrong.
-                "fullDate": (datetime.now() + timedelta(days=2 + n)).strftime(
+                "fullDate": (datetime.now() + timedelta(days=first_day + n)).strftime(
                     "%Y-%m-%d 08:00:00.000"),
                 "slots": ["A_0845_1000"],
             }],
@@ -286,9 +291,13 @@ def build_scenario(apis, centre):
             "latitude": "%.6f" % centre[0], "longitude": "%.6f" % centre[1],
         })
         jobs = (body.get("payload") or []) if status == 200 else []
-        # `get-nearby-jobs` already excludes the caller's own jobs and any they
-        # have quoted on, so whatever comes back is fair game.
-        for n, job in enumerate(jobs[:2]):
+        # ⚠️ Strided, not the first two. The list is sorted by distance, so
+        # everybody quoting on `jobs[:2]` piled every quote onto the same
+        # closest job and left the rest with none — which is a worse picture
+        # than no quotes at all, because it looks like the app only shows one.
+        stride = 1 + (int(phone[-1]) % 3)
+        chosen = jobs[stride::max(stride, 2)][:3] or jobs[:2]
+        for n, job in enumerate(chosen):
             status, body, _ = api.call("POST", "/earner/add-task-quote", {
                 "taskId": job.get("id"),
                 "amt": 400 + 50 * ((n + len(phone)) % 8),
@@ -306,25 +315,43 @@ def build_scenario(apis, centre):
     for phone, api in apis.items():
         status, body, _ = api.call("GET", "/organiser/get-my-posted-tasks")
         tasks = (body.get("payload") or []) if status == 200 else []
-        for task in tasks[:1]:
-            task_id = task.get("id")
+        for task in tasks:
+            # ⚠️ `taskId`, not `id`. The listing projection names it that way,
+            # and reading `id` gave None — every accept was skipped silently
+            # and the run reported "0 accepted" with no error to explain it.
+            task_id = task.get("taskId")
+            if not task_id:
+                continue
             status, body, _ = api.call("GET",
                                        "/organiser/get-quotes-for-task/%s" % task_id)
             quotes = (body.get("payload") or []) if status == 200 else []
             if not quotes:
                 continue
-            quote_id = quotes[0].get("id")
-            status, body, _ = api.call("POST",
-                                       "/organiser/accept-quote/%s" % quote_id)
-            if status == 200:
-                accepted += 1
-            else:
-                print("   ! accept %s: %s" % (quote_id, body.get("message")))
+            # ⚠️ Try each quote, and move on to the next task when none
+            # takes. Always accepting `quotes[0]` meant a second run re-tried
+            # the quote it had already accepted, got "Quote already accepted",
+            # and reported zero — while jobs with genuinely pending quotes sat
+            # untouched behind the `break`.
+            took = False
+            for quote in quotes:
+                quote_id = quote.get("quoteId") or quote.get("id")
+                if not quote_id:
+                    continue
+                status, body, _ = api.call(
+                    "POST", "/organiser/accept-quote/%s" % quote_id)
+                if status == 200:
+                    accepted += 1
+                    took = True
+                    break
+            # One acceptance per organiser: a job with places still open
+            # belongs in the picture as much as a filled one.
+            if took:
+                break
 
     return quoted, accepted
 
 
-def seed(centre, city):
+def seed(centre, city, extra=0):
     print("Seeding %s" % BASE)
     print("Centre: %.4f, %.4f  (jobs land within ~3 km of this)" % centre)
     catalog = None
@@ -354,7 +381,25 @@ def seed(centre, city):
 
         address_id = ensure_address(api, name, index, state, centre, city)
         if address_id:
-            created += post_jobs(api, catalog, address_id, index)
+            # ⚠️ Only if they have none. Without this, every run added two more
+            # jobs per person and the Earning Zone filled with duplicates of
+            # the same eight titles.
+            status, body, _ = api.call("GET", "/organiser/get-my-posted-tasks")
+            already = (body.get("payload") or []) if status == 200 else []
+            if extra:
+                # Bypasses the guard on purpose: `--extra-jobs` exists to add
+                # work for *today*, which the original seed cannot do
+                # retrospectively.
+                # ⚠️ Starts **tomorrow**, not today. A job scheduled for
+                # today at 08:00 is in the past by the evening, so it shows
+                # under neither "today" nor anything else — which looks like
+                # the seed failed rather than like time passing.
+                created += post_jobs(api, catalog, address_id, index,
+                                     count=extra, first_day=1)
+            elif already:
+                print("   %d job(s) already posted, leaving them" % len(already))
+            else:
+                created += post_jobs(api, catalog, address_id, index)
             signed_in[phone] = api
 
     print()
@@ -365,13 +410,18 @@ def seed(centre, city):
         quoted, accepted = build_scenario(signed_in, centre)
         print("  %d quote(s) placed, %d accepted." % (quoted, accepted))
     print()
-    print("To see every screen with data, sign in as one of the demo accounts:")
-    print("    %s   OTP 000000" % PEOPLE[1][0])
-    print("They have posted work, received quotes, accepted one, and have a")
-    print("visit scheduled - so Dashboard, Today and Notifications are not empty.")
+    print("To see every screen with data, sign in as a demo account:")
+    print("    9000009004  (Kavita)  OTP 000000   - fullest: work assigned to")
+    print("                                         her, jobs she posted,")
+    print("                                         quotes out, notifications")
+    print("    9000009003  (Imran)   OTP 000000   - most quotes waiting")
     print()
-    print("Your own account still sees the jobs in Earning Zone, from within")
+    print("Your own account keeps seeing the jobs in Earning Zone, from within")
     print("25 km of the centre above.")
+    print()
+    print("!! 'Today' stays empty unless a job is scheduled for today AND its")
+    print("   slot has not passed. Jobs land 1-3 days out, so Today fills as")
+    print("   those dates arrive - it is not a seeding failure.")
     print()
     # Plain ASCII throughout: a Windows console is cp1252 and cannot encode a
     # warning glyph, which would crash the script *after* it had written to the
@@ -402,6 +452,10 @@ if __name__ == "__main__":
     parser.add_argument("--near", metavar="LAT,LNG",
                         help="seed around this point instead of the default; "
                              "jobs more than 25 km from the phone are invisible")
+    parser.add_argument("--extra-jobs", type=int, default=0, metavar="N",
+                        help="post N more jobs per person starting today, even "
+                             "if they already have some; use this to give the "
+                             "Today tab something to show")
     parser.add_argument("--city", default="Demo Nagar",
                         help="the town the demo addresses claim to be in; set "
                              "it to match --near or the cards will say one "
@@ -414,4 +468,4 @@ if __name__ == "__main__":
         if args.near:
             lat, _, lng = args.near.partition(",")
             point = (float(lat), float(lng))
-        seed(point, args.city)
+        seed(point, args.city, args.extra_jobs)

@@ -20,6 +20,53 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-21. The build machine ran out of disk, twice, mid-upgrade
+
+The Flutter 3.27 → 3.47 upgrade filled the C: drive completely. Every command
+started failing — including the tooling's own, which could not write a temp
+file — and Gradle reported it as *"daemon disappeared unexpectedly"* and
+*"Could not download ... .jar"*, neither of which says "disk full".
+
+Where it went, measured:
+
+| | |
+|---|---|
+| `~/.gradle/caches` | **12.4 GB** — one subdirectory per Gradle version ever used |
+| `~/.gradle/wrapper/dists` | **2.7 GB** — 8.3, 8.11.1, 8.12, 8.13, 8.14.3, all kept |
+| Docker (WSL2 vdisk) | 6.9 GB reclaimable |
+| `Yapan/build` | ~2 GB |
+
+Freed ~9 GB by deleting the Gradle caches for versions no longer used
+(`8.3`, `8.11.1`, `8.12`, `8.13`, `transforms-3`, `jars-9`) and the matching
+wrapper distributions. **None of it is precious** — Gradle re-downloads what a
+build actually needs.
+
+```powershell
+# Keep only the Gradle version the project uses; the rest are dead weight.
+Get-ChildItem "$env:USERPROFILE\.gradle\caches" -Directory |
+  Where-Object { $_.Name -match '^\d+\.\d+' -and $_.Name -ne '8.14.3' } |
+  Remove-Item -Recurse -Force
+Get-ChildItem "$env:USERPROFILE\.gradle\wrapper\dists" |
+  Where-Object { $_.Name -notlike 'gradle-8.14.3*' } | Remove-Item -Recurse -Force
+```
+
+⚠️ `docker system prune` reported 6.9 GB reclaimed and the free space on C: did
+not move — Docker Desktop's WSL2 virtual disk does not shrink itself. Recovering
+that needs `wsl --shutdown` and a manual compact. Not done; noted because
+"prune said it freed 7 GB" is misleading.
+
+⚠️ **`docker system prune -af` was run**, so the next `deploy.sh` rebuilds the
+API image from scratch — a slower first deploy, nothing lost.
+
+**Worth doing:** this machine has 16 GB of RAM and was down to 1.7 GB free with
+the emulator running, which is what killed the Gradle daemon before the disk
+did. `org.gradle.jvmargs` was asking for 4 GB heap plus 2 GB metaspace; it is
+now 2 GB plus 1 GB, which this project builds in comfortably.
+
+**Size:** done, but it will recur — the caches grow with every toolchain bump.
+
+---
+
 ### O-20. The home IP changed and locked us out of the server
 
 Mid-session on 2026-08-26 `deploy.sh` began timing out. Not the server — the
@@ -82,7 +129,7 @@ PLAN-6 §G's day.
 
 ---
 
-### O-18. 🔴 **The OTP is `000000` for every phone number, in production**
+### O-18. 🟠 The OTP is `000000` for every phone number — **known, and held deliberately**
 
 Found while trying to sign in on the emulator to test push, and it is the most
 serious thing in this file.
@@ -119,28 +166,33 @@ earnings. It is not a weakness in the OTP, it is the absence of one. The rate
 limit added this week (5 verify attempts per phone per 15 minutes) does nothing
 here — the attacker needs one attempt.
 
-**This is a hard launch blocker.** Not "fix before scale" — fix before the app
-is on a phone belonging to anybody who is not us.
+**Decision, 2026-08-26: `000000` stays for now, for all numbers.** The product
+owner is taking SMS up next week. Nothing here is being changed in the meantime,
+because the fixed code is currently the only way anybody signs in.
 
-**Two things, in order:**
+That is a reasonable call while the only accounts are ours. It stops being one
+the moment a real user has an account, so this stays open and loud until SMS
+lands. **Do not put this build on a stranger's phone.**
 
-1. Wire an SMS provider (MSG91 and Fast2SMS are the usual Indian choices; both
-   need DLT template registration, which takes days of paperwork — start it
-   early). `sendOtp` has the seam for it already.
+**Two things, in order, when SMS is ready:**
+
+1. Wire the provider (MSG91 and Fast2SMS are the usual Indian choices; both need
+   DLT template registration, which is days of paperwork — start that first,
+   it is the long pole, not the code). `sendOtp` has the seam already.
 2. Set `access-app-otp=Yapan` so the random branch runs. ⚠️ Doing this *first*
    locks everybody out, including us, because nothing delivers the code. The
-   order matters.
+   order is not optional.
 
-**Interim, if SMS is not ready and the app needs to stay usable:** keep the
-fixed code but make it work only for an explicit allow-list of test numbers, so
-one real user's number is never openable with `000000`.
+**Worth considering at step 2:** keep the fixed code working for an explicit
+allow-list of test numbers. Otherwise every future test of the sign-up flow
+needs a real handset and a real SMS, which is a slow way to test a screen.
 
 **Size:** the config change is one line. The SMS integration is a day of code
 and a week of DLT paperwork.
 
 ---
 
-### O-17. The app fails Android's 16 KB page-size check — Play will reject it
+### O-17. ~~The app fails Android's 16 KB page-size check~~ ✅ fixed 2026-08-26
 
 Every launch on the Android 16 emulator opens with a system dialog:
 
@@ -158,12 +210,15 @@ targeting Android 15+, and this is a submission-time rejection rather than a
 runtime failure. It also greets every user on a new phone with a system warning
 dialog before they have seen the app.
 
-**This is the concrete reason [O-11](#o-11-flutter-is-3271-from-december-2024)
-has to happen before a store submission**, rather than a general "we are behind"
-feeling. The upgrade is the fix; there is no flag that makes 3.27 emit an
-aligned engine.
+**Fixed 2026-08-26 by the Flutter 3.47 upgrade** — there was no flag that would
+make 3.27 emit an aligned engine, which is why this forced [O-11](#o-11-flutter-is-3271-from-december-2024)
+rather than waiting for it. All 12 native libraries in the release APK are now
+STORED, 16 KB-aligned in the zip, and linked with PT_LOAD alignment of 16384 or
+65536. The Android 16 emulator no longer shows the warning dialog.
 
-**Size:** the Flutter upgrade in O-11, plus a regression pass.
+`Yapan/tool/check_16kb.py` is that check, kept as a pre-upload gate. Nothing in
+a normal build or test run reports this, and a toolchain that is aligned today
+is not guaranteed to stay aligned.
 
 ---
 
@@ -181,7 +236,23 @@ lets Play ship each phone only its own ABI — roughly 25 MB delivered instead o
 60. Play requires AAB for new apps anyway, so this is on the path regardless.
 `--split-per-abi` does the same for APKs distributed by hand.
 
-**Size:** a different build command, and updating `deploy/README.md`.
+**Asked 2026-08-26: does an App Bundle mean the phone downloads something extra
+later? No.** Play splits the bundle at *install* time and hands the device one
+install containing only its own ABI, screen density and language. Nothing is
+fetched afterwards, nothing depends on a component being present, and it works
+on every device that has the Play Store — which is every device that can run
+this app, since it needs Play Services for FCM anyway. (The feature that *does*
+download later is dynamic feature modules, which this app does not use and
+should not.)
+
+**iOS already does exactly this** and always has — App Store thinning ships each
+device its own slice. Nothing to configure.
+
+**⚠️ It only applies to Play.** A sideloaded APK — how the app gets onto a phone
+today — is still a fat one. `--split-per-abi` produces per-ABI APKs for that
+case; `app-arm64-v8a-release.apk` is the one for any phone worth testing on.
+
+**Size:** a different build command, and a note in `deploy/README.md`.
 
 ---
 
@@ -298,7 +369,7 @@ is followed by `register-device | 200 OK`.
 
 ---
 
-### O-11. Flutter is 3.27.1, from December 2024
+### O-11. ~~Flutter is 3.27.1, from December 2024~~ ✅ upgraded 2026-08-26
 
 Everything is pinned to it, including the iOS minimum deployment target of 12.0
 — which is why raising that target would break the build rather than modernise
@@ -308,7 +379,19 @@ An upgrade wants doing **before** a store submission rather than after: target
 SDK requirements, plugin compatibility and the iOS minimum all move together,
 and discovering that during a release is the expensive time to discover it.
 
-**Size:** a day, and a full regression pass.
+**Done 2026-08-26 — 3.27.1 → 3.47.1, Dart 3.6 → 3.13**, brought forward because
+[O-17](#o-17-the-app-fails-androids-16-kb-page-size-check--fixed-2026-08-26)
+made it a hard Play blocker rather than housekeeping.
+
+149 packages upgraded, six with breaking API changes (`local_auth`,
+`geocoding`, `flutter_local_notifications`, `geolocator`, `location`, and
+Flutter's own Radio and l10n changes). The toolchain floors move together and
+Flutter reports them one at a time: Gradle 8.14.3, AGP 8.11.1, Kotlin 2.2.20.
+
+minSdk stays at 23 — Android 10+ was the requirement and 23 is Android 6.
+
+⚠️ **The iOS deployment target has not been revisited.** It was pinned at 12.0
+by the old Flutter and nothing here changed it; that belongs with §I and a Mac.
 
 ---
 

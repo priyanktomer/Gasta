@@ -165,6 +165,43 @@ from old installs and reads as a live regression. Keep it in step with
 Install it with `adb install -r build/app/outputs/flutter-apk/app-release.apk`.
 It upgrades in place because it is signed with the same key; app data survives.
 
+### ⚠️ Check the 16 KB alignment before any store upload
+
+```bash
+python tool/check_16kb.py build/app/outputs/flutter-apk/app-release.apk
+```
+
+Play requires 16 KB page-size support for apps targeting Android 15+. It is a
+**submission-time rejection**, so nothing in a normal build or test run tells
+you — Flutter 3.27 shipped an unaligned `libflutter.so` and this app carried the
+fault for months. Fixed by the 3.47 upgrade; the script is there so it stays
+fixed.
+
+### For Play: an App Bundle, not this APK
+
+```bash
+flutter build appbundle --release   --dart-define=GASTA_API_BASE=https://yapan.duckdns.org   --dart-define=GASTA_APP_VERSION=1.0.0+1
+```
+
+The APK above is a **fat** one — 65 MB carrying arm64, armv7 and x86_64 at
+once. Play splits a bundle at *install* time and hands each device only its own
+ABI, density and language: roughly 25 MB delivered, one install, and **nothing
+fetched afterwards**. Play requires AAB for new apps in any case.
+
+⚠️ Not to be confused with dynamic feature modules, which *do* download later.
+This app has none and should not.
+
+### For sideloading: per-ABI APKs
+
+```bash
+flutter build apk --release --split-per-abi   --dart-define=GASTA_API_BASE=https://yapan.duckdns.org   --dart-define=GASTA_APP_VERSION=1.0.0+1
+```
+
+Gives `app-arm64-v8a-release.apk` (~25 MB) among others. **arm64-v8a is the one
+for any real phone**; armeabi-v7a only for something very old, x86_64 only for
+an emulator. On a metered connection this is the difference between a download
+somebody accepts and one they think about.
+
 ## Certificates
 
 Caddy handles issuance and renewal. Two things can break it, and both are

@@ -28,9 +28,10 @@ below is work, not risk.
 | Fonts | Platform face for text, decorative one for the wordmark only |
 | Dark mode | **Off.** It was hiding data; light-only until the tokens adapt (§H) |
 | iOS | Configuration audited, never built or run — nobody has a Mac (§I) |
-| Push | FCM, both directions built; registration verified, delivery not yet exercised |
-| Sign-in | 🔴 **The OTP is `000000` for everybody** — see [A-0](#a-0--the-otp-is-000000-for-every-account--see-o-18) |
-| Play readiness | 🔴 Blocked on the 16 KB page-size check ([O-17](OBSERVATIONS.md)) |
+| Push | FCM plus a WorkManager poll fallback; registration verified, delivery not yet exercised |
+| Sign-in | 🟠 OTP is `000000` for everybody, **deliberately, until SMS lands** — [A-0](#a-0--an-sms-provider-so-the-otp-can-stop-being-000000--see-o-18) |
+| Play readiness | ✅ 16 KB check passes on Flutter 3.47; `tool/check_16kb.py` keeps it honest |
+| Flutter | 3.47.1 / Dart 3.13.1, upgraded 2026-08-26 from 3.27.1 |
 | Store listing | Not started |
 | Crash reporting | An endpoint on our own service, rate-limited, 90-day retention |
 
@@ -40,8 +41,9 @@ below is work, not risk.
   somewhere other than the server. *Backups are now off-host to Object Storage,
   so the second half is arguably done; the lawyer is not.*
 - **Phase 7** — one illustration, crew all-or-nothing.
-- **Phase 10** — push. ✅ FCM built 2026-08-26; the WorkManager poll fallback is
-  still open and matters more on Xiaomi/Oppo/Vivo/Realme handsets.
+- **Phase 10** — push. ✅ Done 2026-08-26: FCM both directions, plus the
+  WorkManager poll fallback for the handsets whose battery managers kill it.
+  Neither has been watched delivering on a device yet.
 - **Phase 11** — steps 3–6: crash reporting, store assets, Data Safety, target
   SDK. *Signing is done; the privacy policy URL is now possible.*
 - **Phase 14** — item 4 (deliberately not done), 7 (a "consider"), 8 and 12
@@ -74,15 +76,20 @@ thing to hand a lawyer than a blank page.
 the SLAs with nobody's name on them. The IT Rules 2021 require a named person
 with a contact address. This is an appointment, not a code change.
 
-### A-0. 🔴 The OTP is `000000` for every account — see [O-18](OBSERVATIONS.md)
+### A-0. 🟠 An SMS provider, so the OTP can stop being `000000` — see [O-18](OBSERVATIONS.md)
 
-Ahead of everything else on this page, including the lawyer. Anybody who knows a
-user's phone number can sign in as them today, on the live server. There is also
-no SMS provider wired at all, which is *why* the fixed code exists.
+Anybody who knows a user's phone number can sign in as them today. There is no
+SMS provider wired at all, which is *why* the fixed code exists — it is the only
+thing making the app usable.
 
-Two steps, and the order matters: wire SMS first (DLT template registration in
-India takes days of paperwork — start it now), then set `access-app-otp=Yapan`.
-Doing it the other way round locks everybody out, us included.
+**Held deliberately until SMS lands (product owner, 2026-08-26; taking it up the
+week of 2026-08-31).** Fine while the only accounts are ours. Not fine the day a
+real user has one — so this is the item that gates putting the app on anybody
+else's phone, ahead of the lawyer and the store listing.
+
+Two steps, and the order is not optional: wire SMS first (Indian DLT template
+registration is days of paperwork, so start that before the code), then set
+`access-app-otp=Yapan`. The other way round locks everybody out, us included.
 
 ### A-3. ~~Firebase, for push~~ ✅ done 2026-08-26
 
@@ -470,13 +477,47 @@ console configuration — see below — not development.
 list, which is one tap from everything and always correct. Routing per type
 wants a type in the payload; worth doing when the payload carries one.
 
-### The half that needs none of this
+### F-1. The poll fallback — what it is for, and what it is not
 
-**The WorkManager poll fallback.** On Xiaomi, Oppo, Vivo and Realme a real share
-of pushes never arrive — aggressive battery management kills background
-services, and this audience is largely on exactly those handsets. The poll needs
-no Firebase project, no Apple membership, and no APNs key, and it is arguably the
-more important half for Gasta.
+**Asked 2026-08-26: "WorkManager u need for what? notifications or data
+refresh?" — notifications. Not data refresh.**
+
+Nothing in the app depends on background data. Every screen loads what it needs
+when it opens and falls back to its last good contents when there is no signal
+(§6.2). Refreshing in the background would spend the user's data and battery on
+a screen they are not looking at, which for a metered connection is a real cost
+for no benefit.
+
+**What it *is* for:** on Xiaomi, Oppo, Vivo and Realme, aggressive battery
+management kills the process holding FCM's socket, and pushes then silently
+never arrive. There is no way for the app to know this has happened. A periodic
+job asks the server "is there anything unread?" and raises the notification
+locally if there is — so a job offer still surfaces on a handset where Google's
+own transport has been shut off.
+
+That is most of this audience's phones, which is why it matters at least as much
+as FCM does.
+
+**The shape of it:**
+
+- `workmanager` with a periodic task. ⚠️ **Android's floor is 15 minutes** and
+  the OS will stretch it further under Doze. That is fine — this is a safety
+  net under a real-time channel, not a replacement for one.
+- It calls `get-unread-notification-count`, which already exists and is one
+  indexed query. Nothing new server-side.
+- It compares against the last count it saw and only raises a local
+  notification when that number has gone **up**. Without that, every poll
+  re-notifies about the same thing and the user turns notifications off.
+- It does nothing while the app is in the foreground — the user is already
+  looking at it.
+- ⚠️ Same OEM battery managers can kill WorkManager too. This narrows the gap;
+  it does not close it. The only thing that closes it is the user opening the
+  app, which is why the rule below still stands.
+
+**iOS needs none of this.** APNs delivery through FCM is reliable and iOS has no
+equivalent of the OEM battery managers. `BGAppRefreshTask` exists but iOS
+schedules it on its own judgement, sometimes not for days — so the poll would be
+Android-only, guarded by `Platform.isAndroid`.
 
 ⚠️ **Whatever happens with push, nothing that costs somebody money or a day's
 work may depend on it** — the crew-release decision, the advance confirmation and
@@ -705,9 +746,11 @@ Recorded so they are not re-litigated:
    — which one, and who starts the DLT registration? Nothing else on this list
    matters until this is answered, because the app currently has no working
    authentication at all.
-2. **Phase 10** — build the WorkManager poll half now that FCM is in? (§F; the
-   poll matters more than FCM does on the handsets this audience actually owns.)
-3. **The Flutter upgrade** ([O-17](OBSERVATIONS.md)) — it is now a hard Play
-   blocker, not housekeeping. A day plus a regression pass. When?
-4. **App Bundle instead of a fat APK** ([O-16](OBSERVATIONS.md)) — 60 MB down to
-   roughly 25 MB delivered, for a different build command. Any reason not to?
+2. **Watching a notification actually arrive.** Both channels are built and
+   neither has been seen delivering — every notification needs two accounts, and
+   only one test account exists. Worth doing together on two handsets.
+3. **A machine with room on it.** The upgrade filled the C: drive twice and
+   the emulator then would not start ([O-21](OBSERVATIONS.md)). Roughly 9 GB of
+   dead Gradle cache was cleared and it is back to ~3.5 GB free, which is not
+   enough headroom to build and run an emulator at the same time. This is now
+   the thing slowing everything else down.

@@ -54,15 +54,34 @@ network error that says nothing about why.
 | Stack | `/opt/gasta` on the server |
 
 ⚠️ **SSH is restricted to one IP** — the machine this was set up from. A home
-connection's address changes; when SSH starts timing out, that is why, not the
-server being down. To move it:
+connection's address changes, and this has already happened once
+(49.36.188.40 → 49.36.188.196, 2026-08-26). **When SSH starts timing out, that
+is why — not the server being down.** Check first:
 
 ```bash
-oci network security-list update --security-list-id <id> --force   --ingress-security-rules file://ingress.json     # edit the /32 first
+curl -s https://api.ipify.org
 ```
 
-The security list id is in the OCI console under the VCN `gasta-vcn`, or from
-`oci network vcn get --vcn-id <id> --query 'data."default-security-list-id"'`.
+Then point the rule at the new address:
+
+```bash
+python deploy/allow-my-ip.py $(curl -s https://api.ipify.org)/32
+```
+
+It takes effect in seconds; no restart, and nothing on the server changes.
+
+⚠️ **The OCI command-line tool is not installed on this machine** — only
+`~/.oci/config` and the API key are. `allow-my-ip.py` uses the OCI Python SDK
+(`pip install oci`) against the same config, which is why it is a script rather
+than the one-line `oci network security-list update` every guide shows.
+
+The security list is `Default Security List for gasta-vcn`; the script finds the
+port-22 rule by its port rather than by position, and refuses rather than
+guessing if there is no SSH rule to move.
+
+⚠️ Only the **cloud** side restricts SSH by address. The host's own iptables
+allows 22 from anywhere, which is what makes this recoverable — a host-level IP
+rule would lock the machine away with no way back in.
 
 ## First-time server setup
 

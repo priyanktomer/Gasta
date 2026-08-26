@@ -20,6 +20,36 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-20. The home IP changed and locked us out of the server
+
+Mid-session on 2026-08-26 `deploy.sh` began timing out. Not the server — the
+broadband address had rotated, 49.36.188.40 → 49.36.188.196, and the OCI
+security list allows port 22 from one `/32`.
+
+This was a known gotcha and it still cost time, because a connection timeout
+looks identical to a dead host. Two things came out of it:
+
+- **`deploy/allow-my-ip.py`** — points the rule at the current address in one
+  command. It finds the SSH rule by port rather than by position (rule order is
+  not stable, and an index would eventually move the wrong rule), and refuses
+  rather than adding one if there is no port-22 rule to move.
+- **The OCI command-line tool is not actually installed here.** The README told
+  us to run `oci network security-list update`; only `~/.oci/config` and the API
+  key exist. The script uses the Python SDK against the same config.
+
+⚠️ What made this recoverable at all: only the *cloud* side restricts SSH by
+address. The host's own iptables allows 22 from anywhere. A host-level IP rule
+would have locked the machine away with no way back short of the serial console.
+Worth remembering before anybody tightens it.
+
+**Should the rule move to a wider range?** A `/24` covering the ISP pool would
+stop this recurring, at the cost of allowing the whole pool to reach a port that
+is key-only anyway. Left as-is; the script makes it a ten-second fix.
+
+**Size:** done.
+
+---
+
 ### O-19. Two startup warnings looked at; one is deliberate, one is real debt
 
 Cleared three of the four warnings the server logs on boot (2026-08-26).

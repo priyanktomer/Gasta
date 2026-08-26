@@ -63,6 +63,15 @@ services:
       # less than it looks — but application-prod.properties has no default for
       # it on purpose, and a wildcard here would undo that.
       GASTA_ALLOWED_ORIGINS: https://${GASTA_DOMAIN}
+      # Push (T11.3). Only set here, never in application.properties: the
+      # sender bean is @ConditionalOnProperty on this path, so an unset variable
+      # means "no push, log instead" and a set one means the real thing. A blank
+      # default would be worse than no default — Spring counts a present-but-
+      # empty property as set, and the bean would start and then fail per send.
+      # Relaxed binding: this maps straight onto `gasta.push.fcm.credentials`
+      # with no entry in any properties file, which is what keeps "unset" a
+      # real state rather than an empty string.
+      GASTA_PUSH_FCM_CREDENTIALS: /run/gasta/fcm-service-account.json
     # The API must not start before the database can answer. `service_started`
     # would satisfy the dependency the moment mysqld's process exists, which is
     # some seconds before it accepts connections — and Flyway runs immediately,
@@ -72,6 +81,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      # ⚠️ Read-only, and outside the image. The service-account key can mint
+      # tokens for the Firebase project; baking it into the image would put it
+      # in every layer cache and every registry that image ever reaches.
+      - ${GASTA_FCM_KEY_PATH:-/opt/gasta/fcm-service-account.json}:/run/gasta/fcm-service-account.json:ro
     networks: [internal]
     deploy:
       resources:

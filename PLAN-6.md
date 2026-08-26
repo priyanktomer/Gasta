@@ -22,13 +22,15 @@ below is work, not risk.
 |---|---|
 | Backend | Live, Ampere A1 in Mumbai, Let's Encrypt, nightly verified backups off-host |
 | Schema | Flyway builds it from nothing; `ddl-auto=validate` passes in production |
-| Tests | 77 backend, 27 app, all green |
+| Tests | 82 backend, 27 app, all green |
 | App | Signed release build installs on a physical phone |
 | Hindi | 780 ARB keys, English and Hindi in exact parity |
 | Fonts | Platform face for text, decorative one for the wordmark only |
 | Dark mode | **Off.** It was hiding data; light-only until the tokens adapt (§H) |
 | iOS | Configuration audited, never built or run — nobody has a Mac (§I) |
-| Push | Not built |
+| Push | FCM, both directions built; registration verified, delivery not yet exercised |
+| Sign-in | 🔴 **The OTP is `000000` for everybody** — see [A-0](#a-0--the-otp-is-000000-for-every-account--see-o-18) |
+| Play readiness | 🔴 Blocked on the 16 KB page-size check ([O-17](OBSERVATIONS.md)) |
 | Store listing | Not started |
 | Crash reporting | An endpoint on our own service, rate-limited, 90-day retention |
 
@@ -38,7 +40,8 @@ below is work, not risk.
   somewhere other than the server. *Backups are now off-host to Object Storage,
   so the second half is arguably done; the lawyer is not.*
 - **Phase 7** — one illustration, crew all-or-nothing.
-- **Phase 10** — push. Blocked on a Firebase project.
+- **Phase 10** — push. ✅ FCM built 2026-08-26; the WorkManager poll fallback is
+  still open and matters more on Xiaomi/Oppo/Vivo/Realme handsets.
 - **Phase 11** — steps 3–6: crash reporting, store assets, Data Safety, target
   SDK. *Signing is done; the privacy policy URL is now possible.*
 - **Phase 14** — item 4 (deliberately not done), 7 (a "consider"), 8 and 12
@@ -71,9 +74,25 @@ thing to hand a lawyer than a blank page.
 the SLAs with nobody's name on them. The IT Rules 2021 require a named person
 with a contact address. This is an appointment, not a code change.
 
-### A-3. Firebase, for push
+### A-0. 🔴 The OTP is `000000` for every account — see [O-18](OBSERVATIONS.md)
 
-Phase 10's FCM half needs a project and a `google-services.json`. Free.
+Ahead of everything else on this page, including the lawyer. Anybody who knows a
+user's phone number can sign in as them today, on the live server. There is also
+no SMS provider wired at all, which is *why* the fixed code exists.
+
+Two steps, and the order matters: wire SMS first (DLT template registration in
+India takes days of paperwork — start it now), then set `access-app-otp=Yapan`.
+Doing it the other way round locks everybody out, us included.
+
+### A-3. ~~Firebase, for push~~ ✅ done 2026-08-26
+
+Project `gasta-app-4aae1` exists, `google-services.json` is in place, the
+service-account key is mounted read-only on the server, and the whole path from
+permission prompt to `device_token` row is verified. See [F](#f-firebase--the-exact-steps-both-platforms).
+
+⚠️ The **send** direction has not yet been exercised end to end — every
+notification in the product needs two parties, and only one test account exists.
+[O-15](OBSERVATIONS.md) tracks it.
 
 **The WorkManager poll fallback needs none of that** and is arguably the more
 important half for this audience — a real share of pushes never arrive on
@@ -134,9 +153,21 @@ no symbolication. It answers "is the app crashing, where, and on what", which
 previously had no answer at all. When it needs the rest, that is the point to
 buy rather than build.
 
-Still to do: **something has to look at the table.** A weekly `SELECT summary,
-COUNT(*) ... GROUP BY summary` is the whole of what is missing, and without it
-this is a table nobody reads.
+✅ **Something looks at the table now** (2026-08-26). Two readers, one query:
+`GET /admin-user/crash-summary?days=7` returns faults ordered by how often they
+happened, with the device-model spread and the first and last app version each
+was seen on; and a job at 09:00 on Mondays writes the same thing to the log at
+WARN.
+
+It says "nothing reported" out loud on a quiet week rather than staying silent,
+because "no crashes" and "the job stopped running" look identical in a log that
+only speaks up when there is bad news.
+
+Grouped by **summary**, not by stack trace: the same fault reached from two
+screens produces two traces and would look like two problems.
+
+⚠️ A log line is a weak channel — it reaches somebody only if they go and look.
+It is also the only channel this server has. See B-4.
 
 ### B-4. No monitoring
 
@@ -282,12 +313,8 @@ Meanwhile it costs:
 
 ### What actually raises the bar, in order
 
-1. **Certificate pinning.** *This* is the real answer to the underlying worry.
-   It defends against the one MITM that TLS alone does not: a device with a
-   rogue CA installed, which is how corporate proxies and analysis tools work.
-   Pin to the CA rather than the leaf so a certificate renewal does not brick
-   every installed app. ⚠️ Pinning has bricked more apps than it has protected;
-   it needs a backup pin and a remote kill switch before it is safe to ship.
+1. ~~**Certificate pinning.**~~ **Decided 2026-08-26: not doing it.** See
+   [E-1](#e-1-certificate-pinning--decided-against) below for the reasoning.
 2. **Shorter token lifetimes and real refresh-token rotation.** Reduces what a
    captured token is worth, which is the actual damage in most realistic
    attacks.
@@ -295,12 +322,71 @@ Meanwhile it costs:
    ever issues a certificate for the domain.
 4. **HSTS**, already set in the Caddyfile.
 
+### E-1. Certificate pinning — decided against
+
+The product owner asked me to decide, so: **no pinning, and it is not a close
+call at this stage.**
+
+**What it would buy.** Pinning is the answer to exactly one attack TLS does not
+already stop: a device that trusts a certificate authority we did not choose —
+a corporate proxy, an interception tool, or a CA the user was talked into
+installing. Against a passive network attacker, ordinary TLS is already
+sufficient and has been for years.
+
+**What it would cost, specifically here:**
+
+- **The certificate rotates every 60 days.** Caddy renews from Let's Encrypt
+  automatically, which is the whole reason the deployment is cheap to run. A
+  leaf pin therefore breaks the app roughly six times a year, and it breaks it
+  in the worst possible way: every installed copy stops working at once, and the
+  fix is a store update the user has to accept.
+- **Pinning the intermediate is not safer.** Let's Encrypt has changed
+  intermediates with weeks of notice — R3 to R10/R11, and the ISRG X1
+  cross-sign expiring — and each change would have been an outage.
+- **Pinning the root buys almost nothing.** ISRG Root X1 is trusted by every
+  device already; pinning it excludes other CAs but not an attacker who can get
+  a certificate from Let's Encrypt, which is free and automated. It is the
+  version that would not brick us, and also the version that barely defends.
+- **A kill switch is a chicken-and-egg problem.** The usual mitigation is a
+  remote flag that disables pinning — fetched over the connection that pinning
+  just broke.
+- **Anyone with the access to install a rogue CA has already lost the game.** A
+  rooted phone with an interception proxy can also hook the pin check with
+  Frida in about ten minutes. Pinning stops casual inspection, not a determined
+  attacker.
+
+**What the actual threat model is.** Gasta carries phone numbers, addresses,
+work schedules and wage records for households and workers in small towns. The
+realistic attacks are a shared or stolen handset, a compromised account, and
+somebody socially engineering their way in — [O-18](OBSERVATIONS.md), the fixed
+`000000` OTP, is a hundred times more dangerous than any MITM scenario and costs
+nothing to exploit. Pinning defends the one channel that is already the
+best-defended thing in the system.
+
+**When to revisit.** If the app ever carries payment instruments or identity
+documents, or if a partner's security review requires it. At that point do it
+properly: pin the root **plus** a backup key, ship a kill switch, and give it a
+staged rollout — that is a week of work and a permanent operational burden, and
+it should be bought deliberately rather than added because it sounds prudent.
+
+**What was done instead**, in the same session and for a fraction of the effort:
+tokens moved into the Android Keystore / iOS Keychain
+(`SecureTokenStore`), OTP verification rate-limited, and the crash endpoint
+bounded. Those defend attacks that can actually happen here.
+
+---
+
 ### The one place encryption *would* help
 
-Not the transport — **at rest**. The phone stores tokens in SharedPreferences,
-which is readable on a rooted device. `flutter_secure_storage` puts them in the
-Android Keystore instead. That is a real improvement against a stolen or rooted
-phone, and it is a different threat from MITM. Worth doing; small.
+Not the transport — **at rest**. ✅ **Done 2026-08-26.** The phone stored tokens
+in SharedPreferences, which is readable on a rooted device. `SecureTokenStore`
+now puts them in the Android Keystore / iOS Keychain, with a one-time migration
+so nobody already signed in gets logged out, and a fall back to preferences on
+the handsets where the Keystore is broken — some cheap Android 6/7 devices —
+because being unable to store a token must not mean being unable to sign in.
+
+⚠️ It forced `minSdk` from 21 to 23, dropping Android 5.0/5.1. Those devices
+cannot run current Play Services anyway.
 
 ---
 
@@ -351,18 +437,38 @@ without the APNs key nothing arrives and nothing errors.
 12. Confirm **Firebase Cloud Messaging API (V1)** is enabled. The legacy server
     key is deprecated and the server side should use V1.
 
-### What the code needs
+### What the code needs ✅ built 2026-08-26
 
-`PushSender` and `LoggingPushSender` already exist and **every call site is
-already wired** (T11.3), so the server side is one implementation swapped in
-behind a config flag — the smallest part of this.
+**Server.** `FcmPushSender` posts to FCM's HTTP v1 API, replacing
+`LoggingPushSender` whenever `gasta.push.fcm.credentials` points at a key.
+Deliberately **not** the Firebase Admin SDK — that is tens of megabytes of
+transitive gRPC and Firestore for one HTTPS POST, and the only thing we could
+not do ourselves was mint an OAuth token, so `google-auth-library-oauth2-http`
+is the only dependency taken.
 
-The app needs: `firebase_core` + `firebase_messaging`, token registration on
-login and on refresh, a foreground handler, a background handler (a top-level
-function — a common mistake is making it a method and getting silence), and
-permission request. ⚠️ **On iOS notification permission must be requested
-explicitly**; on Android 13+ so must `POST_NOTIFICATIONS`, which is **not
-currently in the manifest**.
+Sends happen on a small bounded worker pool, never on the caller's thread: the
+notification is written inside a transaction, and a ten-second call to Google in
+there holds a database connection for ten seconds. A token FCM reports as dead
+is deleted rather than retried forever. `device_token` (V17/V18) is unique on
+the token and **reassigns** its user when somebody else signs in on the same
+handset — shared phones are normal in this audience, and pushing the previous
+user's job alerts to whoever holds the phone now is a privacy failure rather
+than a delivery bug.
+
+**App.** `PushService` — `firebase_core`, `firebase_messaging`, and
+`flutter_local_notifications` for the foreground case (FCM draws nothing while
+the app is in front on Android, which reads as "notifications do not work").
+Registration goes through `evaluateResponse`, the one method both sign-in and
+sign-up pass through, and again on every launch because FCM rotates tokens.
+`POST_NOTIFICATIONS` is asked for **after sign-in**, never on first launch.
+
+**iOS needed no separate code.** The `apns` block is in the message from day
+one and `firebase_messaging` hands off to APNs, so the remaining iOS work is
+console configuration — see below — not development.
+
+**What is not built:** per-type deep links. Every push opens the notifications
+list, which is one tap from everything and always correct. Routing per type
+wants a type in the payload; worth doing when the payload carries one.
 
 ### The half that needs none of this
 
@@ -579,13 +685,29 @@ Recorded so they are not re-litigated:
 - **Crash reporting on our own service**, not Sentry or GlitchTip. Done — an
   endpoint, a table, and rate limits. See §B-3.
 - **Delete means soft delete**, everywhere it can. Done for addresses.
+- **No account switching.** One signed-in user per phone. Simpler for push —
+  one token, one owner — and cleaner if a dispute ever needs to establish who
+  was using a handset. `account_switch_service.dart` is gone.
+- **No certificate pinning** (§E-1), decided by me on request. The certificate
+  rotates every 60 days, a kill switch would travel over the connection pinning
+  just broke, and it defends the one channel that is already best defended.
+  Revisit if the app ever carries payments or identity documents.
+- **Secure token storage: yes.** Done — Android Keystore / iOS Keychain, with a
+  migration so nobody signed in gets logged out.
+- **Maps: OpenStreetMap, not Google.** Free, no API key, no billing account. The
+  map is back on the address screen.
+- **Light theme only for now.** Dark mode was hiding data, not merely looking
+  wrong. §H has what real support needs.
 
 ## Still open for the product owner
 
-1. **Phase 10** — build the WorkManager poll half now without FCM, or keep both
-   halves together? (See §F; the poll matters more for this audience than FCM
-   does.)
-2. **Certificate pinning** (§E) — worth it, but it has bricked more apps than it
-   has protected. Only with a backup pin and a kill switch. Now or later?
-3. **Secure token storage** (§E, last section) — tokens sit in SharedPreferences,
-   readable on a rooted device. Small change, real improvement. Now or later?
+1. **SMS provider for the OTP** ([A-0](#a-0--the-otp-is-000000-for-every-account--see-o-18))
+   — which one, and who starts the DLT registration? Nothing else on this list
+   matters until this is answered, because the app currently has no working
+   authentication at all.
+2. **Phase 10** — build the WorkManager poll half now that FCM is in? (§F; the
+   poll matters more than FCM does on the handsets this audience actually owns.)
+3. **The Flutter upgrade** ([O-17](OBSERVATIONS.md)) — it is now a hard Play
+   blocker, not housekeeping. A day plus a regression pass. When?
+4. **App Bundle instead of a fat APK** ([O-16](OBSERVATIONS.md)) — 60 MB down to
+   roughly 25 MB delivered, for a different build command. Any reason not to?

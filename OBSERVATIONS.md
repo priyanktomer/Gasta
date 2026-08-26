@@ -20,6 +20,145 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-18. 🔴 **The OTP is `000000` for every phone number, in production**
+
+Found while trying to sign in on the emulator to test push, and it is the most
+serious thing in this file.
+
+`OtpServiceImpl.generateOtp()` (access-app) reads:
+
+```java
+if (appName.equals("Yapan")) {
+    otp = new DecimalFormat("000000").format(new SecureRandom().nextInt(999999));
+} else {
+    otp = "000000";
+}
+```
+
+`appName` is `@Value("${access-app-otp}")`, and `application.properties` line 89
+says `access-app-otp=false`. `"false"` is not `"Yapan"`, so **the else branch is
+what runs** — everywhere, including the live server. I signed up a working
+account on production with the code `000000` and no SMS.
+
+There is a second half to it. `sendOtp` ends:
+
+```java
+storeInRedis(mobNo, hashedOtp);
+// TODO Send OTP to user
+```
+
+**No SMS is sent by anything.** So the two facts fit together: the fixed code is
+what makes the app usable at all right now, and it is the only reason anybody
+has been able to log in.
+
+**Why it matters:** anyone who knows a Gasta user's phone number can sign in as
+them and see their address, their household, their work record and their
+earnings. It is not a weakness in the OTP, it is the absence of one. The rate
+limit added this week (5 verify attempts per phone per 15 minutes) does nothing
+here — the attacker needs one attempt.
+
+**This is a hard launch blocker.** Not "fix before scale" — fix before the app
+is on a phone belonging to anybody who is not us.
+
+**Two things, in order:**
+
+1. Wire an SMS provider (MSG91 and Fast2SMS are the usual Indian choices; both
+   need DLT template registration, which takes days of paperwork — start it
+   early). `sendOtp` has the seam for it already.
+2. Set `access-app-otp=Yapan` so the random branch runs. ⚠️ Doing this *first*
+   locks everybody out, including us, because nothing delivers the code. The
+   order matters.
+
+**Interim, if SMS is not ready and the app needs to stay usable:** keep the
+fixed code but make it work only for an explicit allow-list of test numbers, so
+one real user's number is never openable with `000000`.
+
+**Size:** the config change is one line. The SMS integration is a day of code
+and a week of DLT paperwork.
+
+---
+
+### O-17. The app fails Android's 16 KB page-size check — Play will reject it
+
+Every launch on the Android 16 emulator opens with a system dialog:
+
+> This app isn't 16 KB compatible. APK alignment check failed.
+> • lib/x86_64/libapp.so : Uncompressed library not aligned
+> • lib/x86_64/libflutter.so : Uncompressed library not aligned
+> • lib/x86_64/libdatastore_shared_counter.so : Unknown error
+
+`libflutter.so` is the engine's own — nothing in our code causes this. Flutter
+3.27.1 (December 2024) predates 16 KB alignment; Flutter 3.29 and later produce
+aligned engines.
+
+**Why it matters:** Google Play requires 16 KB page-size support for apps
+targeting Android 15+, and this is a submission-time rejection rather than a
+runtime failure. It also greets every user on a new phone with a system warning
+dialog before they have seen the app.
+
+**This is the concrete reason [O-11](#o-11-flutter-is-3271-from-december-2024)
+has to happen before a store submission**, rather than a general "we are behind"
+feeling. The upgrade is the fix; there is no flag that makes 3.27 emit an
+aligned engine.
+
+**Size:** the Flutter upgrade in O-11, plus a regression pass.
+
+---
+
+### O-16. The release APK is 60 MB
+
+Measured after adding Firebase: `app-release.apk` is 60.3 MB, a single fat APK
+carrying arm64, armv7 and x86_64 native libraries at once.
+
+**Why it matters:** this audience is on metered mobile data and on phones with
+little free storage. 60 MB is a download somebody thinks about, and thinking
+about it is where installs are lost.
+
+**The fix is nearly free.** An Android App Bundle (`flutter build appbundle`)
+lets Play ship each phone only its own ABI — roughly 25 MB delivered instead of
+60. Play requires AAB for new apps anyway, so this is on the path regardless.
+`--split-per-abi` does the same for APKs distributed by hand.
+
+**Size:** a different build command, and updating `deploy/README.md`.
+
+---
+
+### O-15. Nothing has verified that a push actually arrives
+
+The registration half is proven end to end: the app requests
+`POST_NOTIFICATIONS`, gets an FCM token, posts it, and the server logged
+`register-device | 200 OK | Success | 9000000001`. The row is in `device_token`.
+
+The **send** half — `FcmPushSender` minting an OAuth token from the mounted
+service-account key and posting to FCM — is deployed with its key readable
+inside the container, and has never run. Every notification in the product needs
+a second party to trigger it (a job offer, a confirmation, a notice), and the
+test account is alone on the system.
+
+It is not silent if it fails: a refusal logs `FCM refused a push (<status>)`
+with Google's reason, and a dead token is deleted rather than retried.
+
+**How to close it:** the first real notification between two accounts confirms
+it. If nothing appears, `sudo docker logs gasta-api-1 | grep -i fcm` says why.
+
+**Size:** none — it needs two accounts doing something, not code.
+
+---
+
+### O-14. A test account sits on the production database
+
+`9000000001` / "PushTest" / `gastapushtest@gmail.com`, created on 2026-08-26 to
+verify push registration end to end, because there was no other way to obtain a
+signed-in session on the live server.
+
+Harmless, and worth deleting before real users exist so it never becomes a row
+somebody wonders about. Deleting it also exercises the account-deletion path,
+which is not a bad thing to have run once.
+
+**Size:** one delete, whenever.
+
+---
+
 ### O-10. ~~"Set as home address" and "Delete address" did nothing at all~~ ✅ fixed 2026-08-26
 
 Found while translating `address_screen.dart`. Both menu items ran a handler
@@ -56,7 +195,7 @@ moving home clears the previous one, and another account gets a 400.
 
 ---
 
-### O-13. `google_maps_flutter` is a dead dependency
+### O-13. ~~`google_maps_flutter` is a dead dependency~~ ✅ fixed 2026-08-26
 
 The only `GoogleMap(` in the app is **commented out**
 (`new_address_screen_2.dart`), along with its `onTap` handler. What remains is a
@@ -68,25 +207,32 @@ app can carry, and this audience is on cheap phones and metered data. There is
 also no Maps API key configured on either platform, so the map could not render
 even if uncommented.
 
-**Not removed**, because the code around it reads like the map is meant to come
-back — there is a careful note about what `_selectLocation` should do when it
-does. That is a product call: is the map returning, or is the address form
-staying typed?
+**Answered 2026-08-26 — the map is back, on OpenStreetMap.** The product owner
+asked for a free alternative rather than paying for the Maps SDK, and
+`flutter_map` + OSM tiles needs no API key, no billing account and no per-load
+charge. `google_maps_flutter` is gone from the pubspec, `_selectLocation` does
+what its note said it should, and the pin drops and reverse-geocodes.
 
-**Size:** one line of pubspec either way. The decision is the work.
+⚠️ OSM's public tile server is a volunteer service with a usage policy — fine
+at this scale, and something to move off (a paid tile host, or self-hosting)
+before the app has real traffic. Noted in PLAN-6.
 
 ---
 
-### O-12. `POST_NOTIFICATIONS` is not declared
+### O-12. ~~`POST_NOTIFICATIONS` is not declared~~ ✅ fixed 2026-08-26
 
 Android 13+ requires it before an app may show a notification. It is absent from
 the manifest, so the moment push or any local notification is added, nothing
 will appear on a modern phone and nothing will say why.
 
-Not added yet: declaring a permission before anything requests it is how you get
-a permission prompt for a feature that does not exist. It goes in with Phase 10.
+**Fixed 2026-08-26**, with the feature rather than ahead of it. Declared in the
+manifest, and `PushService.registerWithBackend` asks for it **after sign-in** —
+not on first launch, because a prompt before the user knows what the app is for
+is how an app gets a permanent no, and a denied notification permission can only
+be reversed in system settings.
 
-**Size:** one line, at the right moment.
+Verified on the emulator: the prompt appears once after sign-in, and granting it
+is followed by `register-device | 200 OK`.
 
 ---
 

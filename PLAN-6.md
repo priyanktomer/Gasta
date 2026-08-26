@@ -687,6 +687,317 @@ before a store submission rather than after.
 
 ---
 
+## L. The first UI feedback round (2026-08-26)
+
+The product owner and friends used the app and reported nine things. Three were
+fixed the same day and are marked below; the rest are here with what each one
+actually requires, because most are product decisions with code attached rather
+than bugs.
+
+**Ranked by what they cost a real user**, not by effort.
+
+---
+
+### L-1. "How many people do you need?" is asked of everyone, and promises work that may not exist
+
+> *"I hope we ask user at some point what if only 2 of 5 got hired, then we
+> can't give fake hope of employment to earner even for a min. And why how many
+> people u need being asked for every profession, while calling makeup artist
+> for bride how can bride decide how many people needed, the makeup artist will
+> come with team we have nothing to do with that."*
+
+**This is the most important item on the page**, and it is two separate problems
+that happen to share a control.
+
+#### The question is asked where it has no meaning
+
+`_workersNeededRow()` renders unconditionally on step 1. For a makeup artist, a
+tractor operator or an appliance mechanic, headcount is **the provider's
+business, not the customer's** — a bride booking makeup does not know or care
+whether two people arrive, and asking her to pick a number invites a wrong
+answer that then filters the earners who see the job.
+
+⚠️ It is not cosmetic. `NearbyJobRepo` hides a job once
+`SUM(crew_size) >= WORKERS_NEEDED`, so a number the organiser guessed decides
+who is shown the work.
+
+**The shape of the fix.** `ProfessionRuleDto` already carries per-profession
+rules — `allowedSlots`, `multiSelectSlots`, `baseUnit`, the price band — and the
+app already branches on them. One more flag, `asksHeadcount`, on `profession`
+and in that DTO, and the row draws only when it is true.
+
+Which professions get it is the part that needs a person, not a developer.
+The rule of thumb that fits the market: **ask when the customer is buying
+hours of labour and the count is theirs to choose** — farm labour, construction
+majdoors, loading, harvest crews. **Do not ask when they are buying an outcome**
+— makeup, mechanic, carpenter, electrician, tailor, machinery hire. Default the
+new column to false and switch on the handful that need it, so a profession
+added later does not inherit a question nobody meant to ask.
+
+**Size:** a migration, one DTO field, one `if` in the app. Half a day, plus the
+list.
+
+#### Partial fill quietly promises work
+
+Today a job for five with two taken stays open, and both earners are assigned.
+Nothing tells either of them the job may not run at the size advertised.
+
+The product owner's phrasing is the right test: **do not give fake hope of
+employment, even for a minute.** Three options, and this is the decision:
+
+1. **Show the fill state to the earner.** "3 of 5 places filled" on the job
+   card, which `NearbyJobRepo` already computes as `workersTaken`/`workersNeeded`
+   and the app already receives. **Cheapest, and honest.** It does not resolve
+   the underrun; it stops it being a surprise.
+2. **Make partial fill an explicit organiser decision.** At the deadline, if 2 of
+   5 came, ask the organiser: run with two, or cancel. The crew all-or-nothing
+   flag (`CREW_ALL_OR_NOTHING`) is the same idea already built for crews — this
+   would extend it to headcount.
+3. **All-or-nothing by default.** Cleanest promise, worst outcome: a job that
+   needed five and found four does not happen, and four people lose a day.
+
+**Recommended: 1 now, 2 next.** (1) is a label on a number the app already has
+and removes the dishonesty immediately. (2) is the real answer and needs a
+sweep, a notification and a screen. (3) should not be the default in a market
+where four out of five is a normal Tuesday.
+
+**Size:** (1) an afternoon. (2) two or three days.
+
+---
+
+### L-2. Laundry is the main doorstep service and it is not even listed
+
+> *"yeah laundry is main in doorstep and this only should be enabled with proper
+> menu for wash and iron separately cloth wise like shirt, kurti, saree,
+> trouser"*
+
+Two problems.
+
+#### It does not appear at all
+
+Doorstep Services currently lists **Cylinder and Heavy Item Delivery** and
+**Water Supply**, both "Coming soon". Laundry and Appliance Mechanic are absent,
+though `V5__service_variants.sql` sets `SUPPORTS_PICKUP_DROP = TRUE` on all
+four.
+
+⚠️ The likely cause: V5 matches laundry by the exact name
+`'Pickup Drop Cloth Wash and Ironing'`, and **professions were never seeded by a
+migration** — the table was populated some other way, so that name may not
+match what production holds. The banner icon on the screen is a washing machine,
+which is a leftover from when this screen was laundry-only and is now the only
+laundry on it.
+
+**First step is to look**, not to guess: list `profession` where
+`SUPPORTS_PICKUP_DROP`, and the names near "wash"/"iron"/"laundry". Then either
+the V5 name is wrong, or the flag did not take.
+
+#### The menu is one dimension short
+
+The catalog has `WASH`, `IRON` and `WASH_AND_IRON`, priced `PIECE`. What is
+missing is **the garment**: a saree is not a shirt to wash, and it is certainly
+not a shirt to iron. Today one price covers everything, which is either
+unprofitable for the provider or unfair to the customer.
+
+**The shape of the fix.** A `garment_type` catalog (`SHIRT`, `KURTI`, `SAREE`,
+`TROUSER`, `BEDSHEET`, …) with labels in both languages, and
+`doorstep_service_rate` keyed on **(provider, variant, garment)** instead of
+(provider, variant). The order item gains a garment too. The booking screen
+becomes a grid — garment down, wash/iron/both across — with a quantity stepper,
+which is also the form a customer recognises from a laundry receipt.
+
+⚠️ **The rate table grows multiplicatively.** Six garments times three services
+is eighteen prices for a provider to enter before they can take an order, and
+this audience will not fill in eighteen fields. It needs a default price per
+service with per-garment overrides only where the provider cares — a shirt price
+that covers everything, and a saree that costs more.
+
+**Size:** a migration, a rate screen for the provider, and a rebuild of the
+booking screen. Two to three days, and the provider-side pricing UX is the hard
+half.
+
+---
+
+### L-3. The distance filter measures a straight line and does not say so
+
+> *"in earning zone screen we have distance filter which is not good currently
+> as that doesn't measure distance as per roads, streets but that is streight
+> line distance between two points, since we now have implemented free map, can
+> we improve this feature too?"*
+
+Correct diagnosis. `NearbyJobRepo` computes haversine — great-circle distance —
+in SQL. A job 3 km away across a river can be 15 km by road.
+
+**⚠️ The free map does not help.** `flutter_map` renders OpenStreetMap tiles and
+does no routing. Road distance needs a routing engine, and the options are worse
+than they look:
+
+| | |
+|---|---|
+| OSRM demo server | Free, but its terms forbid production use and it has no SLA |
+| OpenRouteService | Free tier, 2,000 requests/day, needs a key |
+| Self-hosted OSRM/Valhalla | Free forever, but preprocessing an India extract needs more RAM than the whole 12 GB box |
+| Google Distance Matrix | Accurate, and the cost we moved off Maps to avoid |
+
+**There is also a structural problem.** The distance filter is a `WHERE` clause
+over every open job. Routing cannot run in SQL, so it would mean: filter by
+straight line, route the survivors, re-filter and re-sort — N HTTP calls per
+browse, on a screen an earner opens repeatedly.
+
+**Recommendation, in order:**
+
+1. **Say what the number is.** The cheapest correct fix is to stop implying road
+   distance — "2 km away (direct)" or a short note on the filter. The number is
+   not wrong; the label is. **Do this now; it is an afternoon.**
+2. **Road distance on the job detail screen, not the list.** One route lookup
+   for the one job somebody is considering, cached against the task. That is
+   within OpenRouteService's free tier at any volume this product will see for
+   a year, and it fails gracefully — no route, show the direct distance.
+3. **Never put routing in the list query.** If road distance ever has to drive
+   the *filter*, the answer is a precomputed distance matrix over a small set of
+   village centroids, not per-request routing.
+
+⚠️ Straight-line distance is always **less** than road distance, so the current
+filter is a superset — it never wrongly hides a job, it only shows some that are
+further than they look. That is the right direction for the error to run.
+
+**Size:** (1) an afternoon. (2) two days including the key, the cache and the
+failure path.
+
+---
+
+### L-4. "What should they know" should be profession-specific
+
+> *"While posting a job, step 3 u made what should they know that is really
+> really good thing u added, just need to make it profession/subprofession
+> specific to make it perfect."*
+
+Agreed, and it is a small change with a good return.
+
+The eight note chips — `BRING_TOOLS`, `TOOLS_HERE`, `HEAVY_LIFTING`,
+`UPSTAIRS`, `OUTDOOR`, `DOG`, `FOOD_PROVIDED`, `RING_BELL` — are a **hardcoded
+list in `new_task_page.dart`**, shown identically to everyone. "Bring your own
+tools" is meaningless to a makeup artist; "is there a dog" matters enormously to
+a maid and not at all to a tractor operator.
+
+**The shape of the fix.** A `note_option` table mapping a code to a profession
+(and optionally a sub-profession), plus a set with no profession that everybody
+gets. `ProfessionRuleDto` returns the codes that apply; the app keeps its
+existing ARB labels and just renders whichever codes it is given.
+
+⚠️ **Codes, not text, over the wire.** The server sending labels would mean the
+server owning translations, and §F-5's whole approach is code-plus-label so that
+Hindi is a client concern. A new code needs an ARB entry — which is the cost of
+adding one, and it is the right cost.
+
+**Size:** a migration, one DTO field, and deleting a hardcoded list. A day,
+mostly spent deciding which notes belong to which profession — again the part
+that needs a person.
+
+---
+
+### L-5. ~~The loading spinner draws as an oval~~ ✅ fixed 2026-08-26
+
+> *"there comes a circular loader for 1-2 seconds or few millisconds that is
+> coming as oval rather remove that. Wherever possible and needed we can use
+> shimmer UI."*
+
+A `CircularProgressIndicator` has no intrinsic size — it fills the box its
+parent gives it. Returned as the only child of a stretching `Column`, or as an
+`ElevatedButton`'s child, it is handed a wide short box and draws as an ellipse.
+
+It was happening on the four post-a-job steps **and on all three OTP buttons**,
+which is the first thing anybody sees. The buttons now use a sized 18×18
+spinner, matching what `AppButton` already did correctly — those three auth
+screens hand-roll their button and did not. The form steps use a shimmer
+skeleton instead, which also stops the screen jumping when content arrives.
+
+---
+
+### L-6. ~~The country dropdown has one hardcoded option~~ ✅ fixed 2026-08-26
+
+> *"country list should come from db but only enabled countries should show up
+> in drop down check this and enable india only for now."*
+
+Done exactly that. V19 adds `IS_ENABLED` and `DIAL_CODE` to `location_country`,
+India is the only country enabled, and `GET /common/countries` returns the
+enabled rows.
+
+⚠️ Public endpoint, because the picker is on the login screen and has to work
+before there is a session. ⚠️ `IS_ENABLED` defaults false and `addCountry`
+cannot set it — a row existing is not a decision to serve that country.
+
+While there is one country the control is **disabled** rather than offering a
+menu with a single item, which is what [O-22](OBSERVATIONS.md) was about.
+
+---
+
+### L-7. A strip appears between the header and the content on scroll
+
+> *"When we click reserve or schedule tile, a ui opens where all professions
+> tiles are listed, there is some small strip showing on scroll between header
+> and main content."*
+
+Not yet reproduced — I opened Doorstep Services by mistake and then ran out of
+the session. Most likely one of: Material 3's `scrolledUnderElevation` drawing a
+tinted band on the AppBar once content passes beneath it; a stray `Divider`;
+or the overscroll glow.
+
+If it is `scrolledUnderElevation`, it is one line
+(`scrolledUnderElevation: 0` on the theme's `AppBarTheme`) and it would fix the
+same band on **every** screen, which is the right place to fix it.
+
+**Size:** ten minutes once seen. Needs a screenshot or the screen name.
+
+---
+
+### L-8. Slots may be the wrong shape for farm and construction work
+
+> *"Step 2 of post new job asks for slot, i hope that is relvant for farming and
+> constrruction labour (Majdoors), is there something better we can do, but
+> doesn't mean we necessarily need to change something."*
+
+The instinct is right and the answer is **probably not yet**.
+
+Slots — morning, afternoon, evening — fit domestic work, which is what the model
+was built around: a maid comes at a time, and the household plans around it.
+Farm and construction labour does not work that way. A majdoor's day is
+**dawn to dusk, or half a day**, and the thing being agreed is a day's work at a
+day's rate, not a window.
+
+`profession.allowedSlots` and `multiSelectSlots` already exist per profession,
+so the machinery to offer a different set is there. What would fit better:
+
+- **`FULL_DAY` and `HALF_DAY` as the slot set** for agricultural and
+  construction professions, which is how the wage is actually quoted.
+- ⚠️ **Not a start time.** "Reach by 6am" is a real instruction but it belongs
+  in the notes ([L-4](#l-4-what-should-they-know-should-be-profession-specific)),
+  not in a picker that implies the day ends when the slot does.
+
+**But it is not urgent**, and here is why: nobody has posted a farm job on this
+product yet. Changing the slot vocabulary before a single real majdoor job has
+been posted is designing against an imagined user. The right moment is the first
+time somebody actually tries to hire farm labour and the form fights them —
+that conversation will say more than this paragraph can.
+
+**Recommendation: leave it, and watch the first real farm posting.**
+
+---
+
+### L-9. Dummy data for testing on a real phone
+
+> *"Since m testing on phone can u plz add some dummy data for all screens?"*
+
+Every screen is empty on the live server, so most of the app cannot be judged.
+`deploy/demo-data.sql` seeds a plausible set around Bijnor and
+`deploy/demo-data-teardown.sql` removes it.
+
+⚠️ **This writes to the production database.** Every row is tagged so it can be
+found and removed, and the teardown is written before the seed is run. Names are
+obviously fictional. It is safe today because the only accounts are ours; it
+must be torn down before anybody real signs up.
+
+---
+
 ## J. Product work, unranked
 
 Nothing here has been agreed. It is written down so it is not re-derived.

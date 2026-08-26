@@ -73,10 +73,29 @@ Get-ChildItem "$env:USERPROFILE\.gradle\wrapper\dists" |
   Where-Object { $_.Name -notlike 'gradle-8.14.3*' } | Remove-Item -Recurse -Force
 ```
 
-⚠️ `docker system prune` reported 6.9 GB reclaimed and the free space on C: did
-not move — Docker Desktop's WSL2 virtual disk does not shrink itself. Recovering
-that needs `wsl --shutdown` and a manual compact. Not done; noted because
-"prune said it freed 7 GB" is misleading.
+⚠️ **`docker system prune` reported 6.9 GB reclaimed and the free space on C:
+did not move.** Docker Desktop's WSL2 virtual disk grows and never shrinks
+itself, so pruning frees space *inside* the VM and returns none of it. "Prune
+said it freed 7 GB" is misleading and it cost time here.
+
+Compacting it did work, and it is the single largest reclaim available on this
+machine — `docker_data.vhdx` went **16.57 GB → 8.22 GB**, taking C: from 3.6 GB
+free to 13.1 GB. It needs admin:
+
+```powershell
+# Docker Desktop must be stopped first, and WSL shut down.
+Get-Process "Docker Desktop","com.docker.backend" | Stop-Process -Force
+wsl --shutdown
+# then, as administrator:
+#   diskpart
+#   select vdisk file="%LOCALAPPDATA%\Docker\wsl\disk\docker_data.vhdx"
+#   attach vdisk readonly
+#   compact vdisk
+#   detach vdisk
+```
+
+⚠️ Worth repeating every few months, not once. The vhdx regrows with every
+image build, and `deploy.sh` builds one every time.
 
 ⚠️ **`docker system prune -af` was run**, so the next `deploy.sh` rebuilds the
 API image from scratch — a slower first deploy, nothing lost.
@@ -86,7 +105,13 @@ the emulator running, which is what killed the Gradle daemon before the disk
 did. `org.gradle.jvmargs` was asking for 4 GB heap plus 2 GB metaspace; it is
 now 2 GB plus 1 GB, which this project builds in comfortably.
 
-**Size:** done, but it will recur — the caches grow with every toolchain bump.
+⚠️ **The headroom is thinner than the numbers suggest.** After all of the
+above, one emulator boot and three release builds took C: from 13.1 GB back down
+to 5.8 GB in about forty minutes. Building and running an emulator at the same
+time is roughly what this machine can do and no more.
+
+**Size:** done, but it will recur — the caches grow with every toolchain bump
+and the Docker vhdx grows with every deploy.
 
 ---
 

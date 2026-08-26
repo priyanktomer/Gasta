@@ -28,7 +28,7 @@ below is work, not risk.
 | Fonts | Platform face for text, decorative one for the wordmark only |
 | Dark mode | **Off.** It was hiding data; light-only until the tokens adapt (§H) |
 | iOS | Configuration audited, never built or run — nobody has a Mac (§I) |
-| Push | FCM plus a WorkManager poll fallback; registration verified, delivery not yet exercised |
+| Push | FCM plus a WorkManager poll fallback. Poll verified end to end; FCM registration verified, FCM *delivery* not yet seen |
 | Sign-in | 🟠 OTP is `000000` for everybody, **deliberately, until SMS lands** — [A-0](#a-0--an-sms-provider-so-the-otp-can-stop-being-000000--see-o-18) |
 | Play readiness | ✅ 16 KB check passes on Flutter 3.47; `tool/check_16kb.py` keeps it honest |
 | Flutter | 3.47.1 / Dart 3.13.1, upgraded 2026-08-26 from 3.27.1 |
@@ -43,7 +43,8 @@ below is work, not risk.
 - **Phase 7** — one illustration, crew all-or-nothing.
 - **Phase 10** — push. ✅ Done 2026-08-26: FCM both directions, plus the
   WorkManager poll fallback for the handsets whose battery managers kill it.
-  Neither has been watched delivering on a device yet.
+  The poll is verified firing and reaching the server; an FCM push has not been
+  watched arriving, because that needs two accounts.
 - **Phase 11** — steps 3–6: crash reporting, store assets, Data Safety, target
   SDK. *Signing is done; the privacy policy URL is now possible.*
 - **Phase 14** — item 4 (deliberately not done), 7 (a "consider"), 8 and 12
@@ -477,7 +478,7 @@ console configuration — see below — not development.
 list, which is one tap from everything and always correct. Routing per type
 wants a type in the payload; worth doing when the payload carries one.
 
-### F-1. The poll fallback — what it is for, and what it is not
+### F-1. The poll fallback ✅ built and verified 2026-08-26
 
 **Asked 2026-08-26: "WorkManager u need for what? notifications or data
 refresh?" — notifications. Not data refresh.**
@@ -513,6 +514,23 @@ as FCM does.
 - ⚠️ Same OEM battery managers can kill WorkManager too. This narrows the gap;
   it does not close it. The only thing that closes it is the user opening the
   app, which is why the rule below still stands.
+
+**Verified on a device**, which matters more than usual here because the way
+this package fails is silent: the dispatcher must be a top-level
+`@pragma('vm:entry-point')` function or release tree-shaking removes it, the job
+then fires, finds nothing to run, and the poll simply never happens.
+
+The Android job scheduler started `dev.fluttercommunity.workmanager
+.BackgroundWorker` at 19:49:29 and it returned `SUCCESS`; the authenticated
+`get-unread-notification-count` reached the server at 19:50:02 as
+`200 OK | 9000000001`. Dart entry point, HTTP client and stored session all
+work from the background isolate.
+
+⚠️ `adb shell cmd jobscheduler run -f` does **not** work for this — WorkManager
+sees the initial delay has not elapsed and reschedules instead of running
+("Delaying execution ... because it is being executed before schedule").
+Force-stopping the app also cancels the job until next launch. The way to test
+it is to background the app and wait the fifteen minutes.
 
 **iOS needs none of this.** APNs delivery through FCM is reliable and iOS has no
 equivalent of the OEM battery managers. `BGAppRefreshTask` exists but iOS

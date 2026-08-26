@@ -319,8 +319,16 @@ test account is alone on the system.
 It is not silent if it fails: a refusal logs `FCM refused a push (<status>)`
 with Google's reason, and a dead token is deleted rather than retried.
 
+**The poll fallback is now verified**, which covers the half that fails
+silently: the worker fired on schedule and its authenticated request reached
+the server (`get-unread-notification-count | 200 OK | 9000000001`), so the Dart
+background isolate, the entry point and the stored session all work.
+
+What remains unproven is specifically **FCM delivering a push**.
+
 **How to close it:** the first real notification between two accounts confirms
-it. If nothing appears, `sudo docker logs gasta-api-1 | grep -i fcm` says why.
+it. If nothing appears, `sudo docker logs gasta-api-1 | grep -i fcm` says why —
+`FcmPushSender` logs Google's own refusal reason.
 
 **Size:** none — it needs two accounts doing something, not code.
 

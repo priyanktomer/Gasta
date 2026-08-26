@@ -173,7 +173,7 @@ def professions(api):
     return [p for p in payload if isinstance(p, dict) and p.get("id")]
 
 
-def ensure_address(api, name, index, state, centre):
+def ensure_address(api, name, index, state, centre, city):
     """This person's address id near `centre`, creating one if there is none.
 
     Idempotent per location: re-running with the same `--near` reuses the
@@ -196,12 +196,16 @@ def ensure_address(api, name, index, state, centre):
         "addressType": "HOME",
         "addressLine1": "House %d, Demo Colony" % (index + 1),
         "addressLine2": "Near the water tank",
-        "city": "Bijnor",
+        # ⚠️ Passed in, not hardcoded. The first run said "Bijnor" while the
+        # coordinates were in Noida, and the job cards duly showed a town
+        # 130 km from the pin — demo data that lies about itself is worse than
+        # none, because it looks like a bug in the app.
+        "city": city,
         "state": state,
         "postalCode": "246701",
         "latitude": "%.6f" % lat,
         "longitude": "%.6f" % lng,
-        "pickedAddress": "Demo Colony, Bijnor, Uttar Pradesh",
+        "pickedAddress": "Demo Colony, %s, Uttar Pradesh" % city,
     })
     if status != 200:
         print("   ! address: %s" % body.get("message"))
@@ -251,12 +255,85 @@ def post_jobs(api, catalog, address_id, index):
     return posted
 
 
-def seed(centre):
+# Short, plain, and within QuoteDto's 60-character pattern — no symbols beyond
+# `.,!?:()-` or the whole request is rejected.
+QUOTE_MESSAGES = [
+    "I can come at the time you said.",
+    "I have done this work for many years.",
+    "I will bring my own tools.",
+    "Available from tomorrow morning.",
+    "Price is for the full day.",
+]
+
+
+def build_scenario(apis, centre):
+    """Quote, accept, and leave the demo accounts with full screens.
+
+    Seeding jobs alone fills exactly one screen — Earning Zone. Everything
+    else in the product is downstream of somebody *responding* to a job:
+    quotes received, the dashboard counts, today's visits, the register, and
+    the notifications each of those sends.
+
+    So the demo accounts do to each other what real users would: everybody
+    browses, quotes on what they did not post, and every organiser accepts one
+    of the quotes they got.
+    """
+    quoted = accepted = 0
+
+    # ── Everyone quotes on a couple of other people's jobs ───────────────
+    for phone, api in apis.items():
+        status, body, _ = api.call("POST", "/earner/get-nearby-jobs", {
+            "latitude": "%.6f" % centre[0], "longitude": "%.6f" % centre[1],
+        })
+        jobs = (body.get("payload") or []) if status == 200 else []
+        # `get-nearby-jobs` already excludes the caller's own jobs and any they
+        # have quoted on, so whatever comes back is fair game.
+        for n, job in enumerate(jobs[:2]):
+            status, body, _ = api.call("POST", "/earner/add-task-quote", {
+                "taskId": job.get("id"),
+                "amt": 400 + 50 * ((n + len(phone)) % 8),
+                "msg": QUOTE_MESSAGES[(n + len(phone)) % len(QUOTE_MESSAGES)],
+            })
+            if status == 200:
+                quoted += 1
+            else:
+                print("   ! quote on %s: %s" % (job.get("id"), body.get("message")))
+
+    # ── Every organiser accepts one quote on one of their jobs ───────────
+    #
+    # One, not all: a job with places still open is as much a part of the
+    # picture as a filled one, and the dashboard is meant to show both.
+    for phone, api in apis.items():
+        status, body, _ = api.call("GET", "/organiser/get-my-posted-tasks")
+        tasks = (body.get("payload") or []) if status == 200 else []
+        for task in tasks[:1]:
+            task_id = task.get("id")
+            status, body, _ = api.call("GET",
+                                       "/organiser/get-quotes-for-task/%s" % task_id)
+            quotes = (body.get("payload") or []) if status == 200 else []
+            if not quotes:
+                continue
+            quote_id = quotes[0].get("id")
+            status, body, _ = api.call("POST",
+                                       "/organiser/accept-quote/%s" % quote_id)
+            if status == 200:
+                accepted += 1
+            else:
+                print("   ! accept %s: %s" % (quote_id, body.get("message")))
+
+    return quoted, accepted
+
+
+def seed(centre, city):
     print("Seeding %s" % BASE)
     print("Centre: %.4f, %.4f  (jobs land within ~3 km of this)" % centre)
     catalog = None
     state = None
     created = 0
+    # Kept signed in, so the scenario below can act as each of them without
+    # signing in again — every extra login costs one of the five OTP attempts
+    # the limiter allows per phone per fifteen minutes.
+    signed_in = {}
 
     for index, (phone, name, email) in enumerate(PEOPLE):
         api = Api()
@@ -275,13 +352,26 @@ def seed(centre):
                 sys.exit("   ! no states on the server - addresses cannot be saved")
             print("   state code: %s" % state)
 
-        address_id = ensure_address(api, name, index, state, centre)
+        address_id = ensure_address(api, name, index, state, centre, city)
         if address_id:
             created += post_jobs(api, catalog, address_id, index)
+            signed_in[phone] = api
 
     print()
     print("Posted %d demo job(s)." % created)
-    print("Open Earning Zone on a phone within 25 km of that centre.")
+
+    if signed_in:
+        print("Building the rest of the picture...")
+        quoted, accepted = build_scenario(signed_in, centre)
+        print("  %d quote(s) placed, %d accepted." % (quoted, accepted))
+    print()
+    print("To see every screen with data, sign in as one of the demo accounts:")
+    print("    %s   OTP 000000" % PEOPLE[1][0])
+    print("They have posted work, received quotes, accepted one, and have a")
+    print("visit scheduled - so Dashboard, Today and Notifications are not empty.")
+    print()
+    print("Your own account still sees the jobs in Earning Zone, from within")
+    print("25 km of the centre above.")
     print()
     # Plain ASCII throughout: a Windows console is cp1252 and cannot encode a
     # warning glyph, which would crash the script *after* it had written to the
@@ -312,6 +402,10 @@ if __name__ == "__main__":
     parser.add_argument("--near", metavar="LAT,LNG",
                         help="seed around this point instead of the default; "
                              "jobs more than 25 km from the phone are invisible")
+    parser.add_argument("--city", default="Demo Nagar",
+                        help="the town the demo addresses claim to be in; set "
+                             "it to match --near or the cards will say one "
+                             "place while the pin is in another")
     args = parser.parse_args()
     if args.teardown:
         teardown()
@@ -320,4 +414,4 @@ if __name__ == "__main__":
         if args.near:
             lat, _, lng = args.near.partition(",")
             point = (float(lat), float(lng))
-        seed(point)
+        seed(point, args.city)

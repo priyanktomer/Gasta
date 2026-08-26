@@ -687,6 +687,48 @@ before a store submission rather than after.
 
 ---
 
+## J. Product work, unranked
+
+Nothing here has been agreed. It is written down so it is not re-derived.
+
+- **Phase 7's last illustration** — crew all-or-nothing, one line of drawing.
+- **The two remaining Phase 5 gaps** — a declined consent still does not stop
+  the app using the data (Phase 14 item 8), which needs the lawyer's text to say
+  which features depend on it.
+- **`OrganiserServiceImpl` is ~2,400 lines** (Phase 14 item 7). Not a defect.
+  Three of one session's bugs lived there.
+- **The `Slot` enum has 38 values for about four in use** (Phase 14 item 4).
+  Deliberately not trimmed: doing it would delete `SlotLabelTest`, which
+  documents three real 16-hour label defects, for cosmetic gain.
+
+---
+
+## K. On retiring PLAN 1–5
+
+The product owner asked whether the old plan files can be removed now that the
+main development phase is over.
+
+**Recommendation: mark them historical, do not delete them.** Two reasons.
+
+The plans are not only task lists — they carry the *reasoning*, and several
+decisions in this codebase are only defensible because the argument is written
+down somewhere. PLAN-4 holds the product thesis and the rules learned the hard
+way. DEFERRED.md holds what was consciously not built, which is the file that
+stops a future session cheerfully rebuilding something that was rejected for a
+good reason. AUDIT.md is the provenance of a great many small fixes.
+
+And the cost of keeping them is close to zero: a line in the README saying which
+file is current. The cost of deleting them is discovering in four months that
+nobody remembers why `ddl-auto` is what it is, why the Slot enum was not
+trimmed, or why there is no load balancer.
+
+**What is worth doing** is making the entry point unambiguous, so a fresh
+session reads *this* file and not a finished one. That is a README change, and
+it is the only part of this recommendation that should happen without
+discussion.
+
+---
+
 ## L. The first UI feedback round (2026-08-26)
 
 The product owner and friends used the app and reported nine things. Three were
@@ -1000,45 +1042,221 @@ must be torn down before anybody real signs up.
 
 ---
 
-## J. Product work, unranked
+## M. The second UI feedback round (2026-08-26)
 
-Nothing here has been agreed. It is written down so it is not re-derived.
-
-- **Phase 7's last illustration** — crew all-or-nothing, one line of drawing.
-- **The two remaining Phase 5 gaps** — a declined consent still does not stop
-  the app using the data (Phase 14 item 8), which needs the lawyer's text to say
-  which features depend on it.
-- **`OrganiserServiceImpl` is ~2,400 lines** (Phase 14 item 7). Not a defect.
-  Three of one session's bugs lived there.
-- **The `Slot` enum has 38 values for about four in use** (Phase 14 item 4).
-  Deliberately not trimmed: doing it would delete `SlotLabelTest`, which
-  documents three real 16-hour label defects, for cosmetic gain.
+Five more from the product owner and friends, offered as suggestions rather than
+instructions — *"if u think something shouldn't be done then skip that"*. So one
+below is marked as needing no work, and two are recommended in a narrower form
+than asked, with the reasoning.
 
 ---
 
-## K. On retiring PLAN 1–5
+### M-1. The Dashboard should follow the mode the user chose
 
-The product owner asked whether the old plan files can be removed now that the
-main development phase is over.
+> *"When i use gasta just as earner, only work i do should show in dashboard and
+> vice versa for organiser only view."*
 
-**Recommendation: mark them historical, do not delete them.** Two reasons.
+**Agreed, with one refinement that matters.**
 
-The plans are not only task lists — they carry the *reasoning*, and several
-decisions in this codebase are only defensible because the argument is written
-down somewhere. PLAN-4 holds the product thesis and the rules learned the hard
-way. DEFERRED.md holds what was consciously not built, which is the file that
-stops a future session cheerfully rebuilding something that was rejected for a
-good reason. AUDIT.md is the provenance of a great many small fixes.
+The Dashboard always renders both halves — "Work I have posted" and "Work I do"
+— whichever mode the user picked at first launch. An earner therefore reads a
+green card saying "Jobs posted 0 / Open 0 / Given 0 / Done 0" before reaching
+anything about them. `AppModeService` already stores the answer, and nothing on
+this screen consults it.
 
-And the cost of keeping them is close to zero: a line in the README saying which
-file is current. The cost of deleting them is discovering in four months that
-nobody remembers why `ddl-auto` is what it is, why the Slot enum was not
-trimmed, or why there is no load balancer.
+**⚠️ The refinement: hide the irrelevant half only when it is empty.**
 
-**What is worth doing** is making the entry point unambiguous, so a fresh
-session reads *this* file and not a finished one. That is a README change, and
-it is the only part of this recommendation that should happen without
-discussion.
+Mode is a *presentation preference*, not a permission — an earner can still post
+a job, and the mode picker says "You can change this any time". So a rule of
+"earner mode hides posted work" would hide **real data** from somebody who
+posted something and then forgot which mode they were in. That is a worse
+failure than the noise it fixes, and it would be invisible: nothing on screen
+would say a section had been withheld.
+
+The rule that gets the benefit without the risk:
+
+> Hide a section when the mode says it is not wanted **and** it has no rows.
+> Show it whenever it has anything in it, whatever the mode.
+
+In practice an earner-only user has nothing posted, so they see exactly what was
+asked for — and the day they post something, it appears.
+
+**How:** `AppModeService.current()` in the dashboard's build, and the counts are
+already in the payload (`totalPosted`, `tasksAccepted`), so "is it empty" needs
+no extra call.
+
+**Size:** half a day, including both modes and the both-modes case.
+
+---
+
+### M-2. Hide Home for earners, and Earning Zone for organisers
+
+> *"Home tab can be hidden for earner and eanring zone tab can be hiddden for
+> organiser only view."*
+
+**Agreed for Earning Zone. Recommended against for Home — see below.**
+
+**Earning Zone (the Work tab) for an organiser-only user:** hide it. It is a job
+board for people looking for work; somebody who only hires has no use for it,
+and it is the tab that currently sits second from the left where they will hit
+it by accident.
+
+**Home for an earner: ⚠️ this one should not be hidden, and here is why.**
+
+Home is not a "hiring" screen. It is the app's **entry point** — the wordmark,
+search, the profession catalog, Doorstep Services, and the notification bell.
+Removing it from an earner:
+
+- takes away **search**, which is the only way to find anything by name;
+- takes away **Doorstep Services**, which an earner is as likely to *use* as
+  anybody — a laundry worker still needs a cylinder delivered;
+- leaves the app opening on a job list with no home to return to, which for an
+  audience navigating by position rather than by reading is a real loss.
+
+⚠️ And a five-tab bar becoming four **moves every remaining tab**. DESIGN-RULES
+§1 is about controls staying where the user learned them; a bar that reshapes
+itself when a preference changes is the opposite of that.
+
+**What to do instead:** for an earner, make Work the tab the app *opens on*, and
+leave Home in place. That answers the real complaint — "I keep landing on a
+screen that is not mine" — without removing a route. `BottomNavigation` already
+takes an initial index.
+
+**Size:** the Earning Zone hide is an hour. The default-tab change is an hour.
+
+---
+
+### M-3. ~~Earners should not see other earners' quotations~~ ✅ already true
+
+> *"Earners should not be able to view quotations done by other earners."*
+
+**Checked, and it does not happen.** No work needed.
+
+Two endpoints could have leaked it and neither does:
+
+- `GET /earner/get-task-quotation/{taskId}` reads
+  `findByTask_IdAndEarner_Id(taskId, currentUser)` — scoped to the caller, so an
+  earner sees only their own quotes on a task.
+- `GET /organiser/get-quotes-for-task/{taskId}` calls `ownedTask(taskId, user)`
+  first. Verified live: a demo earner calling it on somebody else's job gets
+  **400 "Not authorized to access this task."**
+
+⚠️ Worth keeping in mind for anything added here later. The nearby-jobs
+projection carries `openQuoteLimit` and `workersTaken` — *how many* and *how
+full*, never *what anybody offered*. That line is the right one and new fields
+should stay on this side of it.
+
+---
+
+### M-4. Task Details and Dashboard need a redesign, keeping the story-style paging
+
+> *"Me and my friends did not like Task details UI and Dashboard UI. Though the
+> instagram story like feature (swipe or tap) to view next is cool think if
+> redesign can be done without removing that feature."*
+
+**Agreed, and the story paging should stay** — it is the right interaction for
+this audience: one thing at a time, advanced by tapping anywhere, no scrolling
+to discover that there was more. It is also the thing that makes a dense screen
+survivable on a small phone.
+
+⚠️ **What is not yet known is *what* they disliked**, and a redesign guessed at
+is a redesign done twice. From the two screenshots supplied, these are the
+concrete faults visible — worth confirming before drawing anything:
+
+**Task Details**
+- **"Must Offer:" has nothing after it.** A label with no value reads as a
+  loading failure.
+- **"Organiser Rating: 0.0"** on a new user. Zero is a *bad* rating, not an
+  absent one; "No ratings yet" is the true thing.
+- **The card behind the quote sheet is greyed almost to illegibility.** The
+  details a person needs in order to name a price are the ones dimmed while
+  they name it.
+- **The sheet covers most of the card**, so deciding requires dismissing it.
+- Profession and description disagreed — that was the demo data, since fixed,
+  not the screen.
+
+**Dashboard**
+- **White-on-mid-green counts** inside green cards. "Jobs posted 7" is the
+  largest number on the screen and the lowest contrast on it.
+- **One card per screenful.** Two gradient blocks and a red one consume the
+  whole viewport; the "Work I do" heading is cut off at the fold.
+- **Colour carries meaning that is never explained** — green for posted, red for
+  taken. A red block reads as an error before it reads as a category.
+- ⚠️ The red/green pairing is the single worst choice for a **red-green
+  colour-blind** user, who is roughly one man in twelve. DESIGN-RULES §5 already
+  says colour must not be the only carrier.
+
+**Recommended next step is a conversation, not code.** Three questions worth
+answering first: is it *too much on one screen*, *the colours*, or *not knowing
+what to tap*? The fix is different for each.
+
+**Size:** unknown until that is answered. The contrast and the empty-label
+fixes above are an afternoon and worth doing regardless.
+
+---
+
+### M-5. Tapping a notification should open the thing it is about
+
+> *"Tapping on a notification tile in notification just marks that as read but
+> it should take me to respective screen i think?"*
+
+**Agreed, and the data to do it already exists.**
+
+`Notification` carries `notificationType` and `referenceId` — written at every
+call site, and `referenceId` is the task, quote or notice id. The push payload
+carries the same thing as `deepLinkId`. Nothing reads either: the list marks the
+row read and stops.
+
+⚠️ **This is why push currently opens the notifications list rather than the
+job** — `PushService._open` has the id and no route table to use it with. The
+two are the same missing piece, and fixing it fixes both.
+
+**How:** one mapping from `NotificationType` to a destination, used by the list
+*and* by the push handler. Roughly:
+
+| Type | Destination |
+|---|---|
+| Quote received / accepted / rejected | the task's detail screen |
+| Work started / done / missed | the task's visit screen |
+| Handover notice given / withdrawn | the notice sheet for that engagement |
+| Added to a household | the household screen |
+| Anything unrecognised | the notifications list, as now |
+
+⚠️ **The fallback is the important half.** A notification type added later, or
+one whose target has since been deleted, must land somewhere rather than
+crashing or opening an empty screen. Unrecognised goes to the list — which is
+where it goes today, so nothing regresses.
+
+⚠️ The tap must still mark it read. Navigating away without doing so leaves a
+badge counting messages the user has read.
+
+**Size:** a day, most of it deciding the table and checking each destination
+takes the id it is given.
+
+---
+
+## Where to start
+
+The order below is by what a real user loses, not by effort.
+
+1. **[M-5](#m-5-tapping-a-notification-should-open-the-thing-it-is-about) —
+   notifications that go somewhere.** Every notification in the product is
+   currently a dead end, and the same missing piece is why a push opens a list
+   instead of the job. One mapping fixes both.
+2. **[M-1](#m-1-the-dashboard-should-follow-the-mode-the-user-chose) — the
+   Dashboard follows the chosen mode.** Half a day, and it is the first screen
+   an earner reads.
+3. **[M-2](#m-2-hide-home-for-earners-and-earning-zone-for-organisers) — hide
+   Earning Zone for organisers, open earners on Work.** An hour each.
+4. **[L-1](#l-1-how-many-people-do-you-need-is-asked-of-everyone-and-promises-work-that-may-not-exist)
+   part one — show "3 of 5 filled" on the job card.** The numbers are already in
+   the payload, and it is the honesty fix, not the mechanism.
+5. **[M-4](#m-4-task-details-and-dashboard-need-a-redesign-keeping-the-story-style-paging)
+   contrast and empty labels.** An afternoon, and worth doing whatever the
+   redesign turns out to be.
+
+Everything above this line is agreed. Below it is a decision waiting on
+somebody.
 
 ---
 
@@ -1081,10 +1299,14 @@ Recorded so they are not re-litigated:
    notification travelling between two people. Every notification in the
    product needs two parties and only one test account exists — worth ten
    minutes together on two handsets.
-3. **The country code dropdown has one option** ([O-22](OBSERVATIONS.md)). A
-   fixed `+91` prefix inside the mobile field would be smaller and one less
-   thing to be uncertain about on the first screen. Keep the control only if a
-   second country is actually coming.
-4. **UI feedback.** This is the round that decides most of what happens next.
-   The app on the emulator is current: Comfortaa back, map on OpenStreetMap,
-   light theme only, both languages.
+3. **What exactly is wrong with Task Details and the Dashboard**
+   ([M-4](#m-4-task-details-and-dashboard-need-a-redesign-keeping-the-story-style-paging)).
+   Three questions decide the redesign, and they have different answers: is it
+   *too much on one screen*, *the colours*, or *not knowing what to tap*?
+   Drawing before that is answered means drawing twice.
+4. **Which professions should ask "how many people?"**
+   ([L-1](#l-1-how-many-people-do-you-need-is-asked-of-everyone-and-promises-work-that-may-not-exist)).
+   The code is a flag and an `if`; the list is a judgement about the market.
+5. **Is 25 km the right ceiling?** ([O-26](OBSERVATIONS.md)) A reasonable daily
+   commute for domestic work, and probably wrong for a harvest crew that
+   travels for a season.

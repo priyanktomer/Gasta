@@ -66,16 +66,44 @@ PEOPLE = [
 
 # Titles that read like something a person would post. A screen full of
 # "Test job 1" tells you nothing about whether the screen works.
+#
+# ⚠️ The third field is a fragment of the profession name this job belongs to.
+# Without it the title, the description and the profession were picked from
+# three independent counters, and the app duly showed **"AGRICULTURE - Farm
+# Laborer"** above "Walls only, we have the paint" — which reads as a bug in
+# the app rather than as nonsense in the seed.
 JOBS = [
-    ("Morning cleaning and dishes", "Two rooms and a kitchen. Please ring the bell twice."),
-    ("Cook for evening meal", "Simple vegetarian food for four people."),
-    ("Field levelling before sowing", "About one bigha. Bring your own tools."),
-    ("Fix the ceiling fan", "It runs slow and makes a noise."),
-    ("Help unloading cement bags", "Twenty bags from the road to the back."),
-    ("Wash and iron for the week", "Mostly shirts and one saree."),
-    ("Paint the front room", "Walls only, we have the paint."),
-    ("Look after grandmother in the afternoon", "She needs company and her medicines on time."),
+    ("Morning cleaning and dishes",
+     "Two rooms and a kitchen. Please ring the bell twice.", "maid"),
+    ("Cook for the evening meal",
+     "Simple vegetarian food for four people.", "cook"),
+    ("Field levelling before sowing",
+     "About one bigha. Bring your own tools.", "farm"),
+    ("Fix the ceiling fan",
+     "It runs slow and makes a noise.", "electric"),
+    ("Help unloading cement bags",
+     "Twenty bags from the road to the back.", "construction"),
+    ("Wash and iron for the week",
+     "Mostly shirts and one saree.", "wash"),
+    ("Paint the front room",
+     "Walls only, we have the paint.", "paint"),
+    ("Tractor needed for two days",
+     "Ploughing before the rains.", "agricultural"),
 ]
+
+
+def match_profession(catalog, fragment, fallback_index):
+    """The catalog entry whose name contains `fragment`, or a stable fallback.
+
+    A fragment rather than an exact name because the catalog is not seeded by
+    any migration (O-23) and nobody can say what the names on a given database
+    are.
+    """
+    want = fragment.lower()
+    for entry in catalog:
+        if want in str(entry.get("name", "")).lower():
+            return entry
+    return catalog[fallback_index % len(catalog)]
 
 
 def _json_body(raw):
@@ -228,8 +256,8 @@ def post_jobs(api, catalog, address_id, index, count=2, first_day=2):
     """
     posted = 0
     for n in range(count):
-        title, description = JOBS[(index * 2 + n) % len(JOBS)]
-        profession = catalog[(index * 3 + n) % len(catalog)]
+        title, description, fragment = JOBS[(index * 2 + n) % len(JOBS)]
+        profession = match_profession(catalog, fragment, index * 3 + n)
         # Open to quotes rather than instant: more of the app sits behind that
         # path, so it exercises more screens.
         status, body, _ = api.call("POST", "/organiser/post-new-job", {

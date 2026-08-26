@@ -132,10 +132,19 @@ Point the app at it with nothing — `flutter run` already defaults to
 ## Building the app against the server
 
 ```bash
-flutter build apk --release --dart-define=GASTA_API_BASE=https://yapan.duckdns.org
+flutter build apk --release   --dart-define=GASTA_API_BASE=https://yapan.duckdns.org   --dart-define=GASTA_APP_VERSION=1.0.0+1
 ```
 
-⚠️ It must be `https://`. See the TLS note above.
+⚠️ **`https://` is not optional.** See the TLS note above — an `http://` build
+installs fine and fails every request on a real phone.
+
+⚠️ **`GASTA_APP_VERSION` matters more than it looks.** Crash reports carry it,
+and without it every report says `unknown` — so a crash you fixed keeps arriving
+from old installs and reads as a live regression. Keep it in step with
+`pubspec.yaml`'s `version:`.
+
+Install it with `adb install -r build/app/outputs/flutter-apk/app-release.apk`.
+It upgrades in place because it is signed with the same key; app data survives.
 
 ## Certificates
 

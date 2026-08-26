@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
 """Seed the server with demo data, so the app has something to show.
 
-    python deploy/demo-data.py            # seed
+    python deploy/demo-data.py            # seed (safe to re-run)
     python deploy/demo-data.py --teardown # remove what it created
 
 Every screen on a fresh server is empty, which makes the app impossible to
 judge — you cannot tell a layout problem from a missing row.
 
 ⚠️ **This writes to the live database.** Everything it creates is deliberately
-recognisable: accounts on the 9000009xxx range, obviously fictional names, and
-job titles prefixed `[demo]`. Tear it down before real users exist.
+recognisable: accounts on 90000090xx, obviously fictional names, and job titles
+prefixed `[demo]`. Tear it down before real users exist.
 
 ## Why the API and not SQL
 
 Posting through the real endpoints means the rows are valid by construction —
-schedules expand, addresses geocode into the right columns, reputations
-initialise. A hand-written INSERT would have to reproduce every rule in
-`OrganiserServiceImpl` and would silently get some of them wrong, which is worse
-than no demo data because it looks real.
+schedules expand, addresses resolve to a state row, reputations initialise. A
+hand-written INSERT would have to reproduce every rule in `OrganiserServiceImpl`
+and would silently get some of them wrong, which is worse than no demo data
+because it looks real.
+
+It also means this script cannot create anything the app itself could not, which
+is the property that makes it safe to point at production.
 
 ⚠️ It depends on the OTP being `000000` for every number, which is true today
-and is tracked as O-18. **When SMS is wired this script stops working**, and
-that is the correct outcome — a seeding tool that can create accounts on a
-production system is not something to keep working.
+and is tracked as O-18. **When SMS is wired this stops working**, and that is
+the correct outcome — a tool that can create accounts on a production system is
+not something to keep working.
 """
 
 import argparse
@@ -36,77 +39,24 @@ from datetime import datetime, timedelta
 BASE = "https://yapan.duckdns.org/api/v1/yapan"
 
 # Bijnor, Uttar Pradesh — where the product owner is testing. Jobs are scattered
-# within a few kilometres so the Earning Zone's distance filter has something to
+# over a few kilometres so the Earning Zone's distance filter has something to
 # actually filter.
 CENTRE_LAT = 29.3720
 CENTRE_LNG = 78.1350
 
-# 9000009xxx: outside any real allocation, and greppable.
-PHONE_PREFIX = "900000"
-
 DEMO_TAG = "[demo]"
 
-
-class Api:
-    """Enough HTTP for this script. No dependencies."""
-
-    def __init__(self):
-        self.auth = None
-        self.atsh = None
-
-    def call(self, method, path, body=None, public=False):
-        url = BASE + path
-        data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(url, data=data, method=method)
-        req.add_header("Content-Type", "application/json")
-        if not public:
-            if not self.auth:
-                raise RuntimeError("not signed in")
-            req.add_header("Authorization", self.auth)
-            req.add_header("atsh", self.atsh)
-        try:
-            with urllib.request.urlopen(req, timeout=30) as res:
-                return res.status, json.loads(res.read().decode() or "{}"), dict(res.headers)
-        except urllib.error.HTTPError as e:
-            raw = e.read().decode()
-            try:
-                return e.code, json.loads(raw or "{}"), dict(e.headers)
-            except ValueError:
-                return e.code, {"message": raw[:200]}, dict(e.headers)
-
-    def sign_in(self, phone, full_name, email):
-        """Sign up if new, sign in if not. Returns True when authenticated."""
-        self.call("POST", "/common/otp-request", {"phone": phone}, public=True)
-
-        status, body, headers = self.call(
-            "POST", "/common/login-verify", {"phone": phone, "otp": "000000"}, public=True)
-        if status != 200 or not headers.get("authorization"):
-            status, body, headers = self.call(
-                "POST", "/common/sign-up-verify",
-                {"fullName": full_name, "phone": phone, "email": email, "otp": "000000"},
-                public=True)
-        if status != 200 or not headers.get("authorization"):
-            print("   ! could not sign in %s: %s" % (phone, body.get("message")))
-            return False
-        self.auth = headers["authorization"]
-        self.atsh = headers.get("atsh")
-        return True
-
-
-# ── The cast ─────────────────────────────────────────────────────────────
-#
-# Names are plainly fictional and the roles are the ones this product is
-# actually about: households who need help and people who do the work.
+# Plainly fictional, and the roles this product is actually about.
 PEOPLE = [
-    ("Asha Demo", "gasta.demo.asha@gmail.com"),
-    ("Ramesh Demo", "gasta.demo.ramesh@gmail.com"),
-    ("Sunita Demo", "gasta.demo.sunita@gmail.com"),
-    ("Imran Demo", "gasta.demo.imran@gmail.com"),
-    ("Kavita Demo", "gasta.demo.kavita@gmail.com"),
+    ("9000009000", "Asha Demo", "gasta.demo.asha@gmail.com"),
+    ("9000009001", "Ramesh Demo", "gasta.demo.ramesh@gmail.com"),
+    ("9000009002", "Sunita Demo", "gasta.demo.sunita@gmail.com"),
+    ("9000009003", "Imran Demo", "gasta.demo.imran@gmail.com"),
+    ("9000009004", "Kavita Demo", "gasta.demo.kavita@gmail.com"),
 ]
 
-# Titles read like something a person would actually post, because a screen full
-# of "Test job 1" tells you nothing about whether the screen works.
+# Titles that read like something a person would post. A screen full of
+# "Test job 1" tells you nothing about whether the screen works.
 JOBS = [
     ("Morning cleaning and dishes", "Two rooms and a kitchen. Please ring the bell twice."),
     ("Cook for evening meal", "Simple vegetarian food for four people."),
@@ -119,30 +69,177 @@ JOBS = [
 ]
 
 
+def _json_body(raw):
+    try:
+        return json.loads(raw.decode() or "{}")
+    except ValueError:
+        return {"message": raw.decode(errors="replace")[:200]}
+
+
+def _headers(headers):
+    """Lower-cased keys.
+
+    ⚠️ HTTP header names are case-insensitive but `dict()` is not, and the
+    server sends `Authorization`. Reading `authorization` off the raw dict made
+    a *successful* sign-up look like a failure.
+    """
+    return {k.lower(): v for k, v in dict(headers).items()}
+
+
+class Api:
+    """Enough HTTP for this script, with no dependencies."""
+
+    def __init__(self):
+        self.auth = None
+        self.atsh = None
+
+    def call(self, method, path, body=None, public=False):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(BASE + path, data=data, method=method)
+        req.add_header("Content-Type", "application/json")
+        if not public:
+            if not self.auth:
+                raise RuntimeError("not signed in")
+            req.add_header("Authorization", self.auth)
+            req.add_header("atsh", self.atsh)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as res:
+                return res.status, _json_body(res.read()), _headers(res.headers)
+        except urllib.error.HTTPError as e:
+            return e.code, _json_body(e.read()), _headers(e.headers)
+
+    def sign_in(self, phone, full_name, email):
+        """Sign in, signing up first if the account is new."""
+        self.call("POST", "/common/otp-request", {"phone": phone}, public=True)
+
+        status, body, headers = self.call(
+            "POST", "/common/login-verify", {"phone": phone, "otp": "000000"},
+            public=True)
+        if not headers.get("authorization"):
+            status, body, headers = self.call(
+                "POST", "/common/sign-up-verify",
+                {"fullName": full_name, "phone": phone, "email": email,
+                 "otp": "000000"},
+                public=True)
+        if not headers.get("authorization"):
+            print("   ! %s: %s" % (phone, body.get("message")))
+            # ⚠️ "Too many wrong codes" means the OTP-verify limiter (five per
+            # phone per fifteen minutes) has been tripped by re-running this
+            # script, not that anything is broken. Wait a quarter of an hour.
+            return False
+        self.auth = headers["authorization"]
+        self.atsh = headers.get("atsh")
+        return True
+
+
 def scatter(i):
-    """A point a kilometre or two from the centre, deterministic per index."""
+    """A point a kilometre or three from the centre, stable per person."""
     rnd = random.Random(i * 7919)
-    # ~0.01 degrees is roughly a kilometre here.
+    # ~0.01 degrees is roughly a kilometre at this latitude.
     return (CENTRE_LAT + rnd.uniform(-0.03, 0.03),
             CENTRE_LNG + rnd.uniform(-0.03, 0.03))
 
 
+def state_code(api, want="uttar pradesh"):
+    """The code `location_state` stores, not the display name.
+
+    ⚠️ `addAddress` looks the state up by **code** and stores null when it does
+    not match — so posting "Uttar Pradesh" silently saves an address with no
+    state. Asking the server which codes exist is the only way to be right.
+    """
+    status, body, _ = api.call("GET", "/authenticated/get-states?countryCode=IND")
+    states = (body.get("payload") or []) if status == 200 else []
+    for st in states:
+        if str(st.get("name", "")).strip().lower() == want:
+            return st.get("code")
+    if states:
+        print("   ! '%s' not found; using %s" % (want, states[0].get("name")))
+        return states[0].get("code")
+    return None
+
+
 def professions(api):
     status, body, _ = api.call("GET", "/organiser/get-home-screen-professions")
-    if status != 200:
-        return []
-    payload = body.get("payload") or []
+    payload = (body.get("payload") or []) if status == 200 else []
     return [p for p in payload if isinstance(p, dict) and p.get("id")]
+
+
+def ensure_address(api, name, index, state):
+    """This person's address id, creating one only if they have none.
+
+    Idempotent on purpose: re-running the script must not give everybody a
+    fourth address.
+    """
+    status, body, _ = api.call("GET", "/authenticated/get-user-address")
+    existing = (body.get("payload") or []) if status == 200 else []
+    if existing:
+        return str(existing[0].get("id"))
+
+    lat, lng = scatter(index)
+    status, body, _ = api.call("POST", "/authenticated/add-address", {
+        "addressTitle": "%s home" % name.split()[0],
+        "addressType": "HOME",
+        "addressLine1": "House %d, Demo Colony" % (index + 1),
+        "addressLine2": "Near the water tank",
+        "city": "Bijnor",
+        "state": state,
+        "postalCode": "246701",
+        "latitude": "%.6f" % lat,
+        "longitude": "%.6f" % lng,
+        "pickedAddress": "Demo Colony, Bijnor, Uttar Pradesh",
+    })
+    if status != 200:
+        print("   ! address: %s" % body.get("message"))
+        return None
+
+    status, body, _ = api.call("GET", "/authenticated/get-user-address")
+    addresses = (body.get("payload") or []) if status == 200 else []
+    return str(addresses[0].get("id")) if addresses else None
+
+
+def post_jobs(api, catalog, address_id, index):
+    """Two jobs in different professions, so the list has a spread."""
+    posted = 0
+    for n in range(2):
+        title, description = JOBS[(index * 2 + n) % len(JOBS)]
+        profession = catalog[(index * 3 + n) % len(catalog)]
+        # Open to quotes rather than instant: more of the app sits behind that
+        # path, so it exercises more screens.
+        status, body, _ = api.call("POST", "/organiser/post-new-job", {
+            "title": "%s %s" % (DEMO_TAG, title),
+            "description": description,
+            "professionId": profession["id"],
+            "addressId": address_id,
+            "quoteType": "OPEN",
+            "hireMode": "SCHEDULED",
+            "repeatType": "ONCE",
+            "openForDays": 7,
+            "workersNeeded": 1,
+            "payUnit": "DAY",
+            "scheduleList": [{
+                # ⚠️ `NewTaskSchedule.fullDate` carries
+                # @JsonFormat("yyyy-MM-dd HH:mm:ss.SSS"), so ISO-8601 with a 'T'
+                # is rejected — and Spring answers "The request could not be
+                # read", which says nothing about which field is wrong.
+                "fullDate": (datetime.now() + timedelta(days=2 + n)).strftime(
+                    "%Y-%m-%d 08:00:00.000"),
+                "slots": ["A_0845_1000"],
+            }],
+        })
+        if status == 200:
+            posted += 1
+        else:
+            print("   ! job '%s': %s" % (title, body.get("message")))
+    return posted
 
 
 def seed():
     print("Seeding %s" % BASE)
-
     catalog = None
+    state = None
     created = 0
 
-    for i, (name, email) in enumerate(PEOPLE):
-        phone = "%s%04d" % (PHONE_PREFIX, 9000 + i)
+    for index, (phone, name, email) in enumerate(PEOPLE):
         api = Api()
         print(" - %s (%s)" % (name, phone))
         if not api.sign_in(phone, name, email):
@@ -151,74 +248,32 @@ def seed():
         if catalog is None:
             catalog = professions(api)
             if not catalog:
-                sys.exit("   ! no professions on the server — nothing to post against")
+                sys.exit("   ! no professions on the server - nothing to post against")
             print("   %d professions in the catalog" % len(catalog))
+        if state is None:
+            state = state_code(api)
+            if not state:
+                sys.exit("   ! no states on the server - addresses cannot be saved")
+            print("   state code: %s" % state)
 
-        lat, lng = scatter(i)
-        status, body, _ = api.call("POST", "/authenticated/add-address", {
-            "addressTitle": "%s home" % name.split()[0],
-            "addressType": "HOME",
-            "addressLine1": "House %d, Demo Colony" % (i + 1),
-            "addressLine2": "Near the water tank",
-            "city": "Bijnor",
-            "state": "Uttar Pradesh",
-            "postalCode": "246701",
-            "latitude": "%.6f" % lat,
-            "longitude": "%.6f" % lng,
-            "pickedAddress": "Demo Colony, Bijnor, Uttar Pradesh",
-        })
-        if status != 200:
-            print("   ! address: %s" % body.get("message"))
-            continue
-
-        status, body, _ = api.call("GET", "/authenticated/get-user-address")
-        addresses = body.get("payload") or []
-        if not addresses:
-            print("   ! no address came back")
-            continue
-        address_id = str(addresses[0].get("id"))
-
-        # Two jobs each, in different professions, so the Earning Zone has a
-        # spread rather than eight of the same thing.
-        for n in range(2):
-            title, description = JOBS[(i * 2 + n) % len(JOBS)]
-            profession = catalog[(i * 3 + n) % len(catalog)]
-            # Open to quotes rather than instant: it is the path with more
-            # screens behind it, so it exercises more of the app.
-            status, body, _ = api.call("POST", "/organiser/post-new-job", {
-                "title": "%s %s" % (DEMO_TAG, title),
-                "description": description,
-                "professionId": profession["id"],
-                "addressId": address_id,
-                "quoteType": "OPEN",
-                "hireMode": "SCHEDULED",
-                "repeatType": "ONCE",
-                "openForDays": 7,
-                "workersNeeded": 1,
-                "payUnit": "DAY",
-                "scheduleList": [{
-                    "fullDate": (datetime.now() + timedelta(days=2 + n)).strftime(
-                        "%Y-%m-%dT08:00:00"),
-                    "slots": ["A_0845_1000"],
-                }],
-            })
-            if status == 200:
-                created += 1
-            else:
-                print("   ! job '%s': %s" % (title, body.get("message")))
+        address_id = ensure_address(api, name, index, state)
+        if address_id:
+            created += post_jobs(api, catalog, address_id, index)
 
     print()
-    print("Created %d demo job(s) across %d account(s)." % (created, len(PEOPLE)))
+    print("Posted %d demo job(s)." % created)
     print("Sign in on your own number and open Earning Zone to see them.")
     print()
-    print("⚠️  Remove with: python deploy/demo-data.py --teardown")
+    # Plain ASCII throughout: a Windows console is cp1252 and cannot encode a
+    # warning glyph, which would crash the script *after* it had written to the
+    # live database.
+    print("!! Remove with: python deploy/demo-data.py --teardown")
 
 
 def teardown():
     """Delete every demo account, which takes its jobs with it."""
     print("Removing demo data from %s" % BASE)
-    for i, (name, email) in enumerate(PEOPLE):
-        phone = "%s%04d" % (PHONE_PREFIX, 9000 + i)
+    for phone, name, email in PEOPLE:
         api = Api()
         if not api.sign_in(phone, name, email):
             print(" - %s: not there" % phone)
@@ -226,12 +281,13 @@ def teardown():
         status, body, _ = api.call("POST", "/authenticated/delete-my-account", {})
         print(" - %s: %s" % (phone, "deleted" if status == 200 else body.get("message")))
     print()
-    print("⚠️  Account deletion is a 180-day retention window, not an instant")
-    print("    purge — the nightly sweep clears the rest. Jobs disappear now.")
+    print("!! Account deletion honours the 180-day retention window rather than")
+    print("   purging immediately - the nightly sweep clears the rest. The jobs")
+    print("   disappear from the app straight away, which is what matters here.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Seed or remove demo data.")
     parser.add_argument("--teardown", action="store_true",
                         help="remove the demo accounts and their jobs")
     args = parser.parse_args()

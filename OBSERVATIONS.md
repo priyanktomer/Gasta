@@ -20,7 +20,39 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
-### O-22. A single-option dropdown that is not a choice
+### O-23. Laundry is missing from Doorstep Services, and it is the main service
+
+The Doorstep grid lists **Cylinder and Heavy Item Delivery** and **Water
+Supply**, both "Coming soon". Laundry and Appliance Mechanic do not appear at
+all — though `V5__service_variants.sql` sets `SUPPORTS_PICKUP_DROP = TRUE` on
+all four, and laundry is the service this whole feature was built around. The
+banner icon on the screen is still a washing machine, left over from when it
+was laundry-only.
+
+**Why it matters:** the product owner's words are *"laundry is main in
+doorstep"*. A customer opening Doorstep Services today sees two things that do
+not exist yet and not the one that does.
+
+**Most likely cause:** V5 matches laundry by the exact name `'Pickup Drop Cloth
+Wash and Ironing'`, and **professions were never seeded by a migration** — V1 is
+schema-only, so the table was populated some other way. If production's name
+differs by a word, the `UPDATE` matched nothing and reported success.
+
+⚠️ **Worth fixing at the root rather than by patching the name.** Professions
+are catalog data the whole product depends on, and no migration owns them — so
+nobody can say what a fresh database should contain. That is also why
+`deploy/demo-data.py` asks the server which professions exist rather than
+assuming any.
+
+**First step is to look:** `SELECT ID, NAME, SUPPORTS_PICKUP_DROP FROM
+profession WHERE NAME LIKE '%ash%' OR NAME LIKE '%ron%'`.
+
+**Size:** an hour to diagnose. Seeding the catalog properly is a day, and worth
+doing.
+
+---
+
+### O-22. ~~A single-option dropdown that is not a choice~~ ✅ answered 2026-08-26
 
 The country code on the login screen is a `DropdownButtonFormField` whose
 `items` list is `['+91']`. Tapping it opens a menu with one entry.
@@ -37,9 +69,16 @@ one less thing to be uncertain about.
 **Against removing it:** if a second country is ever coming, taking the control
 out and putting it back is churn, and users who learned where it was lose it.
 
-Left alone deliberately, for the UI feedback round.
+**Answered in the feedback round: the control stays, but the list comes from
+the database.** V19 adds `IS_ENABLED` and `DIAL_CODE` to `location_country`,
+`GET /common/countries` returns the enabled rows, and India is the only one
+enabled — so opening a second market is an UPDATE rather than a release.
 
-**Size:** ten minutes, once somebody decides.
+While there is only one country the dropdown is **disabled** rather than
+offering a menu with a single item, which was the actual complaint. It becomes
+a real control the moment a second country is switched on.
+
+See [PLAN-6 §L-6](PLAN-6.md).
 
 ---
 

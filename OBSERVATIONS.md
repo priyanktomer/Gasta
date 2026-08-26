@@ -20,6 +20,36 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-26. "Any" on the distance filter means 25 km, not any
+
+The Earning Zone's widest band is labelled **Any**. It is not: `DistanceBucket`
+tops out at `VERY_LONG` = 9-25 km, so selecting Any asks for 0-25 km and
+anything further is silently absent.
+
+Found the hard way. Demo jobs were seeded at Bijnor while the test phone was in
+Noida, 130 km away, and the screen said **"No jobs found nearby"** with Any
+selected — which reads as "there is no work" rather than "there is work, further
+than we will show you". The data was there the whole time.
+
+**Why it matters beyond testing:** an earner in a small town with nothing within
+25 km sees the same screen as an earner in a town with no jobs at all. The three
+suggestions it offers — look further away, change working hours, pick more kinds
+of work — are all things the user cannot use to fix it, because the cap is not
+theirs to move.
+
+**This is the same family as [PLAN-6 §L-3](PLAN-6.md)**: a distance number that
+does not say what it means. Two things would fix it:
+
+- **Say the cap.** "Any (up to 25 km)" on the chip, or "No jobs within 25 km" in
+  the empty state. An afternoon, and it removes the dishonesty.
+- **Decide whether 25 km is right.** It is a reasonable daily-commute bound for
+  domestic work and probably wrong for a harvest crew that travels for a season.
+  A per-profession ceiling would fit the existing rules machinery.
+
+**Size:** the label is an afternoon. The band itself is a product decision.
+
+---
+
 ### O-25. The version code was 1 in pubspec and 2001 on the phone
 
 Installing on the product owner's handset failed with

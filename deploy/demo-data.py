@@ -38,11 +38,20 @@ from datetime import datetime, timedelta
 
 BASE = "https://yapan.duckdns.org/api/v1/yapan"
 
-# Bijnor, Uttar Pradesh — where the product owner is testing. Jobs are scattered
-# over a few kilometres so the Earning Zone's distance filter has something to
-# actually filter.
-CENTRE_LAT = 29.3720
-CENTRE_LNG = 78.1350
+# ⚠️ **Seed near where the phone actually is, with `--near LAT,LNG`.**
+#
+# The Earning Zone's widest band, "Any", is 0-25 km — `DistanceBucket.VERY_LONG`
+# tops out there. Jobs seeded further away than that are invisible no matter
+# what the filter says, and the screen reads "No jobs found nearby" with no
+# clue that the data exists. That happened: the first run seeded Bijnor while
+# the test phone was 130 km away in Noida.
+#
+# The default below is only a starting point. Get the real one from a connected
+# handset:
+#
+#     adb shell dumpsys location | grep -oE "[0-9.]+,[0-9.]+" | head -1
+CENTRE_LAT = 28.5692
+CENTRE_LNG = 77.4077
 
 DEMO_TAG = "[demo]"
 
@@ -132,12 +141,12 @@ class Api:
         return True
 
 
-def scatter(i):
+def scatter(i, centre):
     """A point a kilometre or three from the centre, stable per person."""
     rnd = random.Random(i * 7919)
     # ~0.01 degrees is roughly a kilometre at this latitude.
-    return (CENTRE_LAT + rnd.uniform(-0.03, 0.03),
-            CENTRE_LNG + rnd.uniform(-0.03, 0.03))
+    return (centre[0] + rnd.uniform(-0.03, 0.03),
+            centre[1] + rnd.uniform(-0.03, 0.03))
 
 
 def state_code(api, want="uttar pradesh"):
@@ -164,20 +173,26 @@ def professions(api):
     return [p for p in payload if isinstance(p, dict) and p.get("id")]
 
 
-def ensure_address(api, name, index, state):
-    """This person's address id, creating one only if they have none.
+def ensure_address(api, name, index, state, centre):
+    """This person's address id near `centre`, creating one if there is none.
 
-    Idempotent on purpose: re-running the script must not give everybody a
-    fourth address.
+    Idempotent per location: re-running with the same `--near` reuses the
+    address it made last time, and re-running with a different one adds a new
+    address rather than leaving the jobs stranded 130 km away.
     """
+    lat, lng = scatter(index, centre)
+    # The title carries the coordinates so "is there already one here?" is
+    # answerable without geometry.
+    title = "%s home (%.3f,%.3f)" % (name.split()[0], lat, lng)
+
     status, body, _ = api.call("GET", "/authenticated/get-user-address")
     existing = (body.get("payload") or []) if status == 200 else []
-    if existing:
-        return str(existing[0].get("id"))
+    for addr in existing:
+        if str(addr.get("addressTitle")) == title:
+            return str(addr.get("id"))
 
-    lat, lng = scatter(index)
     status, body, _ = api.call("POST", "/authenticated/add-address", {
-        "addressTitle": "%s home" % name.split()[0],
+        "addressTitle": title,
         "addressType": "HOME",
         "addressLine1": "House %d, Demo Colony" % (index + 1),
         "addressLine2": "Near the water tank",
@@ -194,7 +209,10 @@ def ensure_address(api, name, index, state):
 
     status, body, _ = api.call("GET", "/authenticated/get-user-address")
     addresses = (body.get("payload") or []) if status == 200 else []
-    return str(addresses[0].get("id")) if addresses else None
+    for addr in addresses:
+        if str(addr.get("addressTitle")) == title:
+            return str(addr.get("id"))
+    return None
 
 
 def post_jobs(api, catalog, address_id, index):
@@ -233,8 +251,9 @@ def post_jobs(api, catalog, address_id, index):
     return posted
 
 
-def seed():
+def seed(centre):
     print("Seeding %s" % BASE)
+    print("Centre: %.4f, %.4f  (jobs land within ~3 km of this)" % centre)
     catalog = None
     state = None
     created = 0
@@ -256,13 +275,13 @@ def seed():
                 sys.exit("   ! no states on the server - addresses cannot be saved")
             print("   state code: %s" % state)
 
-        address_id = ensure_address(api, name, index, state)
+        address_id = ensure_address(api, name, index, state, centre)
         if address_id:
             created += post_jobs(api, catalog, address_id, index)
 
     print()
     print("Posted %d demo job(s)." % created)
-    print("Sign in on your own number and open Earning Zone to see them.")
+    print("Open Earning Zone on a phone within 25 km of that centre.")
     print()
     # Plain ASCII throughout: a Windows console is cp1252 and cannot encode a
     # warning glyph, which would crash the script *after* it had written to the
@@ -290,5 +309,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Seed or remove demo data.")
     parser.add_argument("--teardown", action="store_true",
                         help="remove the demo accounts and their jobs")
+    parser.add_argument("--near", metavar="LAT,LNG",
+                        help="seed around this point instead of the default; "
+                             "jobs more than 25 km from the phone are invisible")
     args = parser.parse_args()
-    teardown() if args.teardown else seed()
+    if args.teardown:
+        teardown()
+    else:
+        point = (CENTRE_LAT, CENTRE_LNG)
+        if args.near:
+            lat, _, lng = args.near.partition(",")
+            point = (float(lat), float(lng))
+        seed(point)

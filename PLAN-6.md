@@ -59,6 +59,21 @@ things noticed in passing.
 These are the only items with a hard external dependency. Everything else can be
 done in any order.
 
+### A-0. 🟠 An SMS provider, so the OTP can stop being `000000` — see [O-18](OBSERVATIONS.md)
+
+Anybody who knows a user's phone number can sign in as them today. There is no
+SMS provider wired at all, which is *why* the fixed code exists — it is the only
+thing making the app usable.
+
+**Held deliberately until SMS lands (product owner, 2026-08-26; taking it up the
+week of 2026-08-31).** Fine while the only accounts are ours. Not fine the day a
+real user has one — so this is the item that gates putting the app on anybody
+else's phone, ahead of the lawyer and the store listing.
+
+Two steps, and the order is not optional: wire SMS first (Indian DLT template
+registration is days of paperwork, so start that before the code), then set
+`access-app-otp=Yapan`. The other way round locks everybody out, us included.
+
 ### A-1. A lawyer for the six legal documents ⚠️ the long pole
 
 Phase 2 built the whole mechanism — versioned consent, an age gate, a grievance
@@ -75,21 +90,6 @@ thing to hand a lawyer than a blank page.
 `gasta.legal.grievance-*` are blank, so the complaint screen degrades to showing
 the SLAs with nobody's name on them. The IT Rules 2021 require a named person
 with a contact address. This is an appointment, not a code change.
-
-### A-0. 🟠 An SMS provider, so the OTP can stop being `000000` — see [O-18](OBSERVATIONS.md)
-
-Anybody who knows a user's phone number can sign in as them today. There is no
-SMS provider wired at all, which is *why* the fixed code exists — it is the only
-thing making the app usable.
-
-**Held deliberately until SMS lands (product owner, 2026-08-26; taking it up the
-week of 2026-08-31).** Fine while the only accounts are ours. Not fine the day a
-real user has one — so this is the item that gates putting the app on anybody
-else's phone, ahead of the lawyer and the store listing.
-
-Two steps, and the order is not optional: wire SMS first (Indian DLT template
-registration is days of paperwork, so start that before the code), then set
-`access-app-otp=Yapan`. The other way round locks everybody out, us included.
 
 ### A-3. ~~Firebase, for push~~ ✅ done 2026-08-26
 

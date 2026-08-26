@@ -20,6 +20,34 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-25. The version code was 1 in pubspec and 2001 on the phone
+
+Installing on the product owner's handset failed with
+`INSTALL_FAILED_VERSION_DOWNGRADE: Update version code 1 is older than current
+2001`. Every APK built this session would have been refused by that phone.
+
+`pubspec.yaml` said `version: 1.0.0+1`, so Android's **versionCode** was 1,
+while the build already on the device carried 2001 — put there by some earlier
+build passing `--build-number`. A versionCode may only ever go up.
+
+⚠️ **The worse half is crash reporting.** Builds were being made with
+`--dart-define=GASTA_APP_VERSION=1.0.0+2` while the installed app was
+versionCode 2001. Every crash report would have been attributed to a build that
+was never on anybody's phone — which is precisely the failure the comment on
+`Constants.appVersion` warns about, happening anyway because two numbers that
+must agree were set in two places.
+
+**Fixed** to `1.0.0+2002`, with the constraint written into `pubspec.yaml`.
+
+**Still open:** nothing enforces that `GASTA_APP_VERSION` matches `version:`.
+Deriving it from pubspec at build time would need `package_info_plus` — a
+dependency for one string, which rung 5 of the house rules says not to take. A
+one-line check in the build command would do it, and belongs with CI (§C-1).
+
+**Size:** done. The enforcement is an hour, with CI.
+
+---
+
 ### O-24. Long profession names break mid-word on the tiles
 
 "Construction Laborer" renders as **"Constructio / n Laborer"** on the Post New

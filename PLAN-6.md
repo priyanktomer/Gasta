@@ -787,10 +787,13 @@ Nothing tells either of them the job may not run at the size advertised.
 The product owner's phrasing is the right test: **do not give fake hope of
 employment, even for a minute.** Three options, and this is the decision:
 
-1. **Show the fill state to the earner.** "3 of 5 places filled" on the job
-   card, which `NearbyJobRepo` already computes as `workersTaken`/`workersNeeded`
-   and the app already receives. **Cheapest, and honest.** It does not resolve
-   the underrun; it stops it being a surprise.
+1. ~~**Show the fill state to the earner.**~~ ✅ **Already built** — checked
+   before writing any of it. `workersBadge` in `worksheet_screen.dart` draws
+   "Needs 5 people · 3 places left", "last place", or "Needs all 5 together ·
+   3 left" for the crew case, whenever `workersNeeded > 1`. So an earner
+   browsing already knows how full a job is.
+   ⚠️ What they are *not* told is anything after they are assigned: nothing
+   says "this still needs two more and may not run". That is (2), not (1).
 2. **Make partial fill an explicit organiser decision.** At the deadline, if 2 of
    5 came, ask the organiser: run with two, or cancel. The crew all-or-nothing
    flag (`CREW_ALL_OR_NOTHING`) is the same idea already built for crews — this
@@ -798,12 +801,16 @@ employment, even for a minute.** Three options, and this is the decision:
 3. **All-or-nothing by default.** Cleanest promise, worst outcome: a job that
    needed five and found four does not happen, and four people lose a day.
 
-**Recommended: 1 now, 2 next.** (1) is a label on a number the app already has
-and removes the dishonesty immediately. (2) is the real answer and needs a
-sweep, a notification and a screen. (3) should not be the default in a market
-where four out of five is a normal Tuesday.
+**Recommended: (2), since (1) turns out to be done.** It is the real answer and
+needs a sweep, a notification and a screen. (3) should not be the default in a
+market where four out of five is a normal Tuesday.
 
-**Size:** (1) an afternoon. (2) two or three days.
+⚠️ The gap (1) does not close: the badge is a *browse-time* signal. Once a quote
+is accepted the earner has planned a day around it, and nothing tells them the
+job is still short. That is the moment the promise is made, and it is where (2)
+belongs.
+
+**Size:** (2) is two or three days.
 
 ---
 
@@ -1248,12 +1255,12 @@ The order below is by what a real user loses, not by effort.
    an earner reads.
 3. **[M-2](#m-2-hide-home-for-earners-and-earning-zone-for-organisers) — hide
    Earning Zone for organisers, open earners on Work.** An hour each.
-4. **[L-1](#l-1-how-many-people-do-you-need-is-asked-of-everyone-and-promises-work-that-may-not-exist)
-   part one — show "3 of 5 filled" on the job card.** The numbers are already in
-   the payload, and it is the honesty fix, not the mechanism.
-5. **[M-4](#m-4-task-details-and-dashboard-need-a-redesign-keeping-the-story-style-paging)
-   contrast and empty labels.** An afternoon, and worth doing whatever the
+4. **[M-4](#m-4-task-details-and-dashboard-need-a-redesign-keeping-the-story-style-paging)
+   contrast and empty labels** — an afternoon, and worth doing whatever the
    redesign turns out to be.
+5. **[L-1](#l-1-how-many-people-do-you-need-is-asked-of-everyone-and-promises-work-that-may-not-exist)
+   part two — tell an assigned earner the job is still short.** Browse-time
+   honesty already exists; this is the half that is missing.
 
 Everything above this line is agreed. Below it is a decision waiting on
 somebody.

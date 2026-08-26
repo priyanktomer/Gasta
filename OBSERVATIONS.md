@@ -20,6 +20,38 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-19. Two startup warnings looked at; one is deliberate, one is real debt
+
+Cleared three of the four warnings the server logs on boot (2026-08-26).
+
+**Fixed:** the MySQL `TINYINT(1)` display-width deprecation (V18 aligns
+`device_token` with the `BIT(1)` every other table uses), and both Hibernate
+dialect warnings — `spring.jpa.properties.hibernate.dialect` is gone, because
+Hibernate 6 picks the dialect from JDBC metadata including the server version,
+which is more than a hardcoded name can do when MySQL is upgraded under us.
+
+**`spring.jpa.open-in-view`** is now set explicitly to `true`, which is not the
+right long-term answer and says so in a comment. Open-in-view keeps the
+EntityManager open through response rendering, so a lazy association still loads
+while Jackson serialises — which several endpoints returning raw entities depend
+on. Turning it off is correct for a REST service and would surface those as
+`LazyInitializationException`. That belongs with PLAN-6 §G's conversion to
+projections, with a pass over every endpoint — not as a side effect of silencing
+a warning.
+
+**The Spring Security warning is deliberate and staying.** `Global
+AuthenticationManager configured with an AuthenticationProvider bean.
+UserDetailsService beans will not be used` — `AccessAppAuthenticationProvider`
+calls `accessAppUserDetailsService.loadUserByUsername` itself, so the
+`UserDetailsService` *is* used, just not by the path Spring is describing.
+Restructuring a shared security library to quiet a message about a configuration
+that works is a risk with no gain.
+
+**Size:** the open-in-view change is a day of checking endpoints, and it is
+PLAN-6 §G's day.
+
+---
+
 ### O-18. 🔴 **The OTP is `000000` for every phone number, in production**
 
 Found while trying to sign in on the emulator to test push, and it is the most

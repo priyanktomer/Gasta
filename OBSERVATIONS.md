@@ -20,6 +20,29 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-22. A single-option dropdown that is not a choice
+
+The country code on the login screen is a `DropdownButtonFormField` whose
+`items` list is `['+91']`. Tapping it opens a menu with one entry.
+
+Found while fixing the clipping the font change caused (it rendered as "+9" —
+Comfortaa is wider than the face the box was measured against, now fixed). The
+clipping was a bug; this is a design question and not a developer's to answer.
+
+**Why it matters:** it takes up a fifth of the row and looks like something the
+user has to get right, on the very first screen. If India is the only market for
+now, a fixed `+91` prefix inside the mobile field would be smaller, faster and
+one less thing to be uncertain about.
+
+**Against removing it:** if a second country is ever coming, taking the control
+out and putting it back is churn, and users who learned where it was lose it.
+
+Left alone deliberately, for the UI feedback round.
+
+**Size:** ten minutes, once somebody decides.
+
+---
+
 ### O-21. The build machine ran out of disk, twice, mid-upgrade
 
 The Flutter 3.27 → 3.47 upgrade filled the C: drive completely. Every command

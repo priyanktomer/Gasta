@@ -533,7 +533,13 @@ made it a hard Play blocker rather than housekeeping.
 Flutter's own Radio and l10n changes). The toolchain floors move together and
 Flutter reports them one at a time: Gradle 8.14.3, AGP 8.11.1, Kotlin 2.2.20.
 
-minSdk stays at 23 — Android 10+ was the requirement and 23 is Android 6.
+minSdk is **24** (Android 7), not the 23 it was — Flutter 3.47's default, and
+flutter_local_notifications 22 declares 24 anyway. Android 10+ was the
+requirement, so there is room.
+
+⚠️ The explicit `minSdk = 23` and its reasoning were **deleted by the Flutter
+migrator**, which replaced the line with `flutter.minSdkVersion`. That is how a
+deliberate floor quietly becomes a toolchain default. Written out again.
 
 ⚠️ **The iOS deployment target has not been revisited.** It was pinned at 12.0
 by the old Flutter and nothing here changed it; that belongs with §I and a Mac.

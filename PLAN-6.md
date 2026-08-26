@@ -931,22 +931,24 @@ menu with a single item, which is what [O-22](OBSERVATIONS.md) was about.
 
 ---
 
-### L-7. A strip appears between the header and the content on scroll
+### L-7. ~~A strip appears between the header and the content on scroll~~ ✅ fixed 2026-08-26
 
 > *"When we click reserve or schedule tile, a ui opens where all professions
 > tiles are listed, there is some small strip showing on scroll between header
 > and main content."*
 
-Not yet reproduced — I opened Doorstep Services by mistake and then ran out of
-the session. Most likely one of: Material 3's `scrolledUnderElevation` drawing a
-tinted band on the AppBar once content passes beneath it; a stray `Divider`;
-or the overscroll glow.
+Reproduced on Post New Task, and it was `scrolledUnderElevation`. Material 3
+tints an AppBar's surface the moment anything scrolls beneath it, and against
+this scaffold background that lands as a grey band with a hard edge between the
+title and the content.
 
-If it is `scrolledUnderElevation`, it is one line
-(`scrolledUnderElevation: 0` on the theme's `AppBarTheme`) and it would fix the
-same band on **every** screen, which is the right place to fix it.
+⚠️ **Not a bug in that screen** — every screen with a scrolling body had it.
+Fixed on the theme's `AppBarTheme` so it is fixed once: zero elevation, and
+`surfaceTintColor: transparent` as well, because on some versions the tint is
+applied independently of the elevation value.
 
-**Size:** ten minutes once seen. Needs a screenshot or the screen name.
+The same screenshot showed something else, now [O-24](OBSERVATIONS.md):
+"Construction Laborer" breaks **mid-word** into "Constructio / n Laborer".
 
 ---
 

@@ -20,6 +20,28 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-24. Long profession names break mid-word on the tiles
+
+"Construction Laborer" renders as **"Constructio / n Laborer"** on the Post New
+Task grid — Flutter breaks inside the word when a line will not fit, rather than
+moving the whole word down.
+
+Seen while fixing [L-7](PLAN-6.md). Anything long enough will do it; that tile
+happens to be the first one that does.
+
+**Why it matters:** it reads as a rendering fault, and this grid is how somebody
+chooses what they are posting. It is also worse in Hindi, where compound
+profession names are longer.
+
+**The fix is a choice, not a bug hunt:** a slightly smaller label style on the
+tile, or three lines instead of two, or shorter names in the catalog. The last
+one is probably right for "Construction Laborer" — "Labourer" alone would do,
+since the category heading already says Construction.
+
+**Size:** minutes, once somebody picks.
+
+---
+
 ### O-23. Laundry is missing from Doorstep Services, and it is the main service
 
 The Doorstep grid lists **Cylinder and Heavy Item Delivery** and **Water

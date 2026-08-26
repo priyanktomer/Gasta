@@ -27,7 +27,7 @@ below is work, not risk.
 | Hindi | 720 ARB keys, English and Hindi in exact parity |
 | Push | Not built |
 | Store listing | Not started |
-| Crash reporting | None — a crash on a user's phone is invisible |
+| Crash reporting | An endpoint on our own service, rate-limited, 90-day retention |
 
 ### What PLAN-5 has left open
 
@@ -91,21 +91,16 @@ temporary because it is. Roughly ₹700–900/year.
 
 ### B-1. Everything in OBSERVATIONS.md
 
-Nine entries, three fixed. The open ones worth pulling forward:
+Ten entries, six resolved. The open ones worth pulling forward:
 
-- **O-10** ⚠️ — "Set as home address" and "Delete address" confirmed work that
-  never happened; there are no such endpoints. The controls are removed for now.
-  Rebuilding them needs a decision about deleting an address a live task points
-  at, which is a data question, not a UI one.
-- **O-1** — sign-up rejects every email that is not Gmail or Outlook
-  (`SignUpDto.java:27`). A product decision, not a bug, but it turns people away
-  at the second screen with a message that reads like their address is invalid.
-- **O-3** — `ddl-auto=update` in development. Production is on `validate`; dev
-  is one line away, and that line would have prevented the Phase 9 incident that
-  took down the whole test suite.
 - **O-5** — profession names arrive as English prose. The most visible remaining
   English on otherwise-Hindi screens.
 - **O-6** — regenerate the DuckDNS token; it was pasted into a chat log.
+- **O-1's wording** — the Gmail/Outlook rule is staying (a policy, not a defect),
+  but the message reads like the user's address is invalid rather than like a
+  rule. One sentence to fix.
+- **O-8** — check whether Actuator resolves now; `HealthController`'s reason for
+  existing may have expired.
 
 ### B-2. The Hindi audit nobody has done
 
@@ -120,17 +115,20 @@ which form fields to draw. The visits screen glued `"$when"` and `", $slot"`
 onto a sentence with adjacent-string concatenation. Both had to be restructured
 before a single word could be replaced. Expect more of these.
 
-### B-3. No crash reporting
+### B-3. Crash reporting ✅ built 2026-08-26
 
-A crash on a user's phone is invisible. Two routes, both free:
+Neither Sentry nor GlitchTip — an endpoint on the service we already run, at the
+product owner's request. `POST /common/report-crash`, a `crash_report` table,
+90-day retention on the nightly sweep, and rate limits (see §D).
 
-- **Sentry free tier** — needs an account, nothing else. Least work.
-- **Self-hosted GlitchTip** — would sit in the same compose stack on the VM,
-  which has ~8 GB spare. No account, no third party, but it needs Postgres plus
-  a worker and is meaningfully more to run.
+**What it is not:** no grouping by fault, no regression detection, no alerting,
+no symbolication. It answers "is the app crashing, where, and on what", which
+previously had no answer at all. When it needs the rest, that is the point to
+buy rather than build.
 
-Deliberately not started: half-built error reporting is worse than none, because
-it looks like coverage.
+Still to do: **something has to look at the table.** A weekly `SELECT summary,
+COUNT(*) ... GROUP BY summary` is the whole of what is missing, and without it
+this is a table nobody reads.
 
 ### B-4. No monitoring
 
@@ -167,7 +165,171 @@ real data worth protecting — which is roughly now.
 
 ---
 
-## D. Product work, unranked
+## D. Rate limiting — what exists, and what it should cover
+
+**Asked for on 2026-08-26.** There is already a working limiter; the question
+is where it is applied, not how to build one.
+
+### What is there now
+
+`RateLimitService` — a Redis counter with a **fixed** window:
+
+```java
+boolean allow(String key, int limit, int windowSeconds);
+```
+
+Two properties worth knowing before extending it:
+
+- **The window is fixed, not sliding.** The expiry is set only on the first hit,
+  so a steady stream of requests cannot keep the key alive forever and stop the
+  counter ever resetting. The cost is a burst at a window boundary — up to
+  double the limit across two adjacent windows. For flood protection that is
+  fine; for anything where the exact number matters it is not.
+- **It fails open.** If Redis is unreachable, requests are allowed and the
+  failure is logged. A login that stops working because the rate limiter is down
+  is a worse outcome than a window of unthrottled requests. ⚠️ That is a
+  deliberate availability-over-security trade, and it is the right one *for a
+  nuisance limiter*. It would be the wrong one for anything protecting money.
+
+Applied today:
+
+| Endpoint | Limit |
+|---|---|
+| `otp-request` | 6 per phone per hour, 40 per caller per hour |
+| `report-crash` | 20 per address per hour, 10 per account per hour |
+
+### The thing that makes all of this approximate
+
+**Behind carrier-grade NAT a whole village shares one address.** This audience is
+on mobile data, so "per IP" is closer to "per cell tower" than "per person". It
+is why the OTP limits are per *phone number* first and per caller second, and
+why the crash limit is 20 rather than 3.
+
+`X-Forwarded-For` is trusted only for its first entry and only because the app
+sits behind our own Caddy. It is client-settable, so it is a nuisance limiter
+and **not an authorisation boundary**. Nothing that matters should key on it
+alone.
+
+### Where it is missing, in the order I would add it
+
+1. **`login-verify` and `sign-up-verify`.** Currently unlimited. Six OTP requests
+   an hour is capped, but *verification attempts* are not — so a six-digit code
+   can be brute-forced within its own lifetime. This is the one real hole. Key
+   on the phone number, roughly 5 attempts per code, and invalidate the OTP once
+   exceeded rather than merely refusing: a limit that resets while the same code
+   is still valid buys nothing.
+2. **`post-new-job` / `post-instant-job`.** A script could fill the Earning Zone
+   with noise, which costs every worker in the area their attention. Per account,
+   generous — perhaps 20 an hour.
+3. **`add-advance`, `respond-advance`, `record-payment`.** Money paths. Low
+   volume by nature, so a tight limit costs nothing and bounds the damage of a
+   stolen token.
+4. **A global fallback in Caddy.** One line of `rate_limit` in front of
+   everything, set high enough never to touch a real user. Catches whatever
+   nobody remembered to annotate.
+
+### What I would not do
+
+**Do not put the limiter in a filter that runs on every request.** It becomes a
+Redis round trip on the hot path for endpoints that do not need it, and the
+first slow day someone disables the whole thing. Per-endpoint, deliberately, is
+slower to write and easier to reason about.
+
+---
+
+## E. Encrypting the payload — should we?
+
+**Asked for on 2026-08-26: would encrypting the request or response body prevent
+man-in-the-middle attacks?**
+
+### The short answer
+
+**No, and it would make things slightly worse.** TLS already prevents it, and
+that is the mechanism designed for exactly this problem. Adding a second,
+home-made encryption layer inside TLS buys nothing against MITM and costs real
+things.
+
+### Why
+
+A man-in-the-middle attack means somebody sits between the phone and the server
+and reads or alters traffic. TLS stops this with **server certificate
+verification** — the attacker cannot present a certificate for
+`yapan.duckdns.org` that the phone will accept, because they cannot get one from
+a CA the phone trusts. That is already in place, and Android will not even allow
+plain HTTP for this app.
+
+Now consider encrypting the JSON body as well. The app must hold the key. The
+app is on the attacker's phone, and any key shipped inside an APK can be
+extracted in minutes. So the attacker who has already defeated TLS also has the
+key — the second layer stops nobody it was aimed at.
+
+Meanwhile it costs:
+
+- Every payload becomes opaque, so **`@Valid` cannot run** until after decryption
+  and the whole `ApiExceptionHandler` shape has to be rebuilt.
+- Debugging goes from "read the request" to "decrypt it first" — on a system
+  where the fastest way to find a defect has repeatedly been reading a log line.
+- Key rotation becomes an app release.
+- Caddy can no longer see request sizes or paths usefully for rate limiting.
+
+### What actually raises the bar, in order
+
+1. **Certificate pinning.** *This* is the real answer to the underlying worry.
+   It defends against the one MITM that TLS alone does not: a device with a
+   rogue CA installed, which is how corporate proxies and analysis tools work.
+   Pin to the CA rather than the leaf so a certificate renewal does not brick
+   every installed app. ⚠️ Pinning has bricked more apps than it has protected;
+   it needs a backup pin and a remote kill switch before it is safe to ship.
+2. **Shorter token lifetimes and real refresh-token rotation.** Reduces what a
+   captured token is worth, which is the actual damage in most realistic
+   attacks.
+3. **Certificate transparency monitoring** — cheap, and tells you if somebody
+   ever issues a certificate for the domain.
+4. **HSTS**, already set in the Caddyfile.
+
+### The one place encryption *would* help
+
+Not the transport — **at rest**. The phone stores tokens in SharedPreferences,
+which is readable on a rooted device. `flutter_secure_storage` puts them in the
+Android Keystore instead. That is a real improvement against a stolen or rooted
+phone, and it is a different threat from MITM. Worth doing; small.
+
+---
+
+## F. Firebase — the exact steps
+
+The project **`gasta-app`** exists. What remains, in the console:
+
+1. **Project overview → Add app → Android.**
+2. **Package name: `com.tomer.yapan`** — it must match exactly or the app will
+   not accept the config file. Nickname and the SHA-1 field can be left alone;
+   SHA-1 is only needed for Google Sign-In and Dynamic Links, neither of which
+   this app uses.
+3. **Download `google-services.json`** and put it at
+   `Yapan/android/app/google-services.json`. ⚠️ **Do not commit it.** It is not
+   a secret exactly — it ships inside every APK — but it identifies the project
+   and belongs with the other build-time config that stays out of git.
+4. **Project settings → Cloud Messaging** → confirm the **Firebase Cloud
+   Messaging API (V1)** is enabled. The legacy server key is deprecated and the
+   server side should use V1.
+5. **Project settings → Service accounts → Generate new private key.** That JSON
+   *is* a secret, goes on the server as `/opt/gasta/fcm-service-account.json`,
+   and never near git.
+
+Then the code: `PushSender` and `LoggingPushSender` already exist and every call
+site is wired (T11.3), so the server side is one implementation swapped in
+behind a config flag. The app side needs the FCM handler and the token
+registration.
+
+**And the half that needs none of this:** the WorkManager poll fallback. On
+Xiaomi, Oppo, Vivo and Realme a real share of pushes never arrive — aggressive
+battery management kills background services, and this audience is largely on
+exactly those handsets. The poll is arguably the more important half for Gasta
+and can be built without Firebase existing at all.
+
+---
+
+## G. Product work, unranked
 
 Nothing here has been agreed. It is written down so it is not re-derived.
 
@@ -183,7 +345,7 @@ Nothing here has been agreed. It is written down so it is not re-derived.
 
 ---
 
-## E. On retiring PLAN 1–5
+## H. On retiring PLAN 1–5
 
 The product owner asked whether the old plan files can be removed now that the
 main development phase is over.
@@ -209,19 +371,28 @@ discussion.
 
 ---
 
-## Questions for the product owner
+## Decisions taken, 2026-08-26
 
-Left here rather than asked in conversation, so they are not lost:
+Recorded so they are not re-litigated:
 
-1. **The Gmail/Outlook restriction (O-1)** — what is it for? If it is to block
-   disposable addresses, a denylist does that without also blocking Rediff and
-   Yahoo, which plenty of this audience have.
-2. **`ddl-auto=validate` in development (O-3)** — it would mean writing the
-   migration before the entity, every time. That is already the stated discipline
-   after Phase 9. Make it enforced?
-3. **A real domain** — worth ₹700–900/year now, or stay on DuckDNS until closer
-   to a store submission?
-4. **Crash reporting** — Sentry's free tier (an account, no infrastructure) or
-   self-hosted GlitchTip on the same VM (no third party, more to run)?
-5. **Phase 10** — build the WorkManager poll half now without FCM, or keep them
-   together?
+- **The Gmail/Outlook restriction stays.** It is deliberate: those are what
+  ordinary people use, and the long tail of other providers is where the
+  scam signups come from. Not a defect — a policy. Worth revisiting only if real
+  users start being turned away, and the message could be softened to say it is
+  a policy rather than reading as "your address is invalid".
+- **`ddl-auto=validate` in development too.** Done. Entities must match the
+  schema; write the migration first.
+- **DuckDNS for now.** A real domain when a store submission is close.
+- **Crash reporting on our own service**, not Sentry or GlitchTip. Done — an
+  endpoint, a table, and rate limits. See §B-3.
+- **Delete means soft delete**, everywhere it can. Done for addresses.
+
+## Still open for the product owner
+
+1. **Phase 10** — build the WorkManager poll half now without FCM, or keep both
+   halves together? (See §F; the poll matters more for this audience than FCM
+   does.)
+2. **Certificate pinning** (§E) — worth it, but it has bricked more apps than it
+   has protected. Only with a backup pin and a kill switch. Now or later?
+3. **Secure token storage** (§E, last section) — tokens sit in SharedPreferences,
+   readable on a rooted device. Small change, real improvement. Now or later?

@@ -20,7 +20,7 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
-### O-10. ⚠️ "Set as home address" and "Delete address" did nothing at all
+### O-10. ~~"Set as home address" and "Delete address" did nothing at all~~ ✅ fixed 2026-08-26
 
 Found while translating `address_screen.dart`. Both menu items ran a handler
 that called **`GET /get-user-address`** — the *list* endpoint — and then showed
@@ -36,31 +36,40 @@ So the app confirmed, twice, work that nobody did — including a **delete**, th
 one action where a false confirmation is worst, because the user stops looking
 for the thing they think they removed.
 
-**Done for now:** the two menu items and their handlers are removed. A control
-that reports success for work nobody did is worse than no control, and removing
-it is trivially reversible. The `adSetHome` / `adDelete` strings are kept in the
-ARB for when it comes back.
+**Fixed.** `PATCH /set-home-address/{id}` and `DELETE /delete-address/{id}`
+(V15), and the menu is back against them.
 
-**To actually build it** — and it should be built, "which of these is my home"
-is a real need:
+**Delete is soft**, at the product owner's instruction — `IS_ENABLED = false`.
+That was the open design question and it is the right answer: addresses are
+referenced by tasks, visits and doorstep orders, so a hard delete would be
+refused by a foreign key or orphan the history. A worker's evidence that she
+went to a particular house for three years must not depend on the household
+never having tidied up its address list.
 
-- `PATCH /set-home-address/{id}` and `DELETE /address/{id}` on the server.
-- A decision about **deleting an address a live task points at.** Refuse?
-  Soft-delete? Reassign? A hard delete would orphan visits, and the work record
-  is the thing this product exists to protect.
-- The list must refresh afterwards.
+`IS_HOME_ADDRESS` had never been written by anything, so every row held NULL —
+and NULL is neither TRUE nor FALSE, meaning a query for "the home address" and a
+query for "not the home address" would *both* have found nothing. Both columns
+are NOT NULL with a default now.
 
-**Size:** small on the app, a real design question on the server.
+Verified against production: the row survives a delete with `IS_ENABLED=0`,
+moving home clears the previous one, and another account gets a 400.
 
 ---
 
 ### O-1. Sign-up rejects every email except Gmail and Outlook
 
-**Correction:** the rule is **server-side**, not in the app.
-`SignUpDto.java:27` carries
-`@Pattern(regexp = "^[a-zA-Z0-9._%+-]+@(gmail\.com|outlook\.com)$")`, and
-the app only shows the message the server sends back. Found while signing a
-test account up against the container stack.
+**Answered 2026-08-26 — deliberate, and staying.** Those are what ordinary
+people use; the long tail of other providers is where scam signups come from. So
+this is a policy, not a defect.
+
+The rule is **server-side**: `SignUpDto.java:27` carries
+`@Pattern(regexp = "^[a-zA-Z0-9._%+-]+@(gmail\.com|outlook\.com)$")`, and the
+app only shows the message the server sends back.
+
+**One thing still worth changing:** the message reads like the address is
+*invalid* rather than like a rule. "Please use a Gmail or Outlook address —
+those are the ones we can verify" costs nothing and stops a legitimate user
+thinking they mistyped.
 
 **Why it matters.** The audience is rural and semi-urban India. Plenty of people
 have a Yahoo address, a Rediff address, an address their employer or college
@@ -109,7 +118,7 @@ disappearing. Deployed.
 
 ---
 
-### O-3. `ddl-auto=update` in development is a loaded gun
+### O-3. ~~`ddl-auto=update` in development is a loaded gun~~ ✅ fixed 2026-08-26
 
 Production is on `validate` and starts clean. Development is still on `update`,
 so Hibernate will silently create a column for a new `@Entity` field.
@@ -126,7 +135,13 @@ mid-thought. But the migration has to be written before the change can ship
 anyway, and `SchemaBuiltByFlywayOnlyTest` only catches it at test time, which is
 later than the moment you would rather know.
 
-**Size:** one line, plus a habit.
+**Fixed** at the product owner's instruction — *"I always want the Spring Boot
+entities to match the actual DB schema."* Development is on `validate` now.
+
+Day to day: **write the migration first, then the entity.** Add a field without
+one and the application will not start, naming the column it cannot find — ten
+seconds after the change rather than on a deploy weeks later. Both V15 and V16
+were written that way.
 
 ---
 

@@ -1155,7 +1155,7 @@ should stay on this side of it.
 
 ---
 
-### M-4. Task Details and Dashboard need a redesign, keeping the story-style paging
+### M-4. ~~Task Details and Dashboard need a redesign~~ ✅ done 2026-08-27
 
 > *"Me and my friends did not like Task details UI and Dashboard UI. Though the
 > instagram story like feature (swipe or tap) to view next is cool think if
@@ -1166,9 +1166,23 @@ this audience: one thing at a time, advanced by tapping anywhere, no scrolling
 to discover that there was more. It is also the thing that makes a dense screen
 survivable on a small phone.
 
-⚠️ **What is not yet known is *what* they disliked**, and a redesign guessed at
-is a redesign done twice. From the two screenshots supplied, these are the
-concrete faults visible — worth confirming before drawing anything:
+**Done.** I asked which of three things was wrong instead of redesigning, and
+the answer was "layout, design, colour combination etc etc" — i.e. all of it.
+That was the right answer to a question I should not have asked.
+
+**The diagnosis, once looked at properly:** these were the only two screens in
+the app that did not follow its own design system. Everywhere else is a **white
+card on the #F4F6F6 ground with dark text** — profession tiles, job cards,
+profile rows, quote cards. Task Details was a navy-to-white gradient with a
+translucent grey card and a pink heading; the Dashboard was saturated gradient
+blocks with white text. That is *why* both read as a different app, and it is
+the same failure as the wordmark font on three screens earlier.
+
+Both now use `AppText`, `AppSpacing`, `AppRadii` and `AppSemanticColors` like
+everything else. Colour survives as an **accent** — a 5px rail and a tinted
+icon — not as a fill.
+
+**What changed, and the faults each fix addresses:**
 
 **Task Details**
 - **"Must Offer:" has nothing after it.** A label with no value reads as a
@@ -1193,12 +1207,29 @@ concrete faults visible — worth confirming before drawing anything:
   colour-blind** user, who is roughly one man in twelve. DESIGN-RULES §5 already
   says colour must not be the only carrier.
 
-**Recommended next step is a conversation, not code.** Three questions worth
-answering first: is it *too much on one screen*, *the colours*, or *not knowing
-what to tap*? The fix is different for each.
+**And one thing added rather than fixed: story progress bars.** Tap-to-advance
+was the interaction they liked, and its weakness was that nothing said it was
+there or how far through the deck you were. Instagram solves that with segment
+bars at the top, so Task Details has them — borrowing the part that makes the
+interaction legible without changing the interaction. Above twelve tasks the
+bars are thinner than the gaps and stop meaning anything, so it falls back to
+"3 / 40".
 
-**Size:** unknown until that is answered. The contrast and the empty-label
-fixes above are an afternoon and worth doing regardless.
+⚠️ **Three layout attempts before the card was right**, all found by looking at
+it on a device rather than by reasoning:
+
+1. `Row(crossAxisAlignment: stretch)` for the accent rail — inside a scroll view
+   the Row's height is unbounded, so the rail got infinite constraints and the
+   cards laid out on top of one another.
+2. `IntrinsicHeight` around it — cannot measure the `GridView` of chips, so it
+   under-reported the height and the next-action row spilled out below the
+   card's own background.
+3. A `Stack` with a `Positioned(top, bottom)` rail — sizes to the content, no
+   intrinsic pass, nothing to get wrong. (A left border on the decoration would
+   be simpler still, but Flutter refuses a borderRadius with a non-uniform
+   border.)
+
+**Size:** done.
 
 ---
 

@@ -742,15 +742,18 @@ Recorded so they are not re-litigated:
 
 ## Still open for the product owner
 
-1. **SMS provider for the OTP** ([A-0](#a-0--the-otp-is-000000-for-every-account--see-o-18))
-   — which one, and who starts the DLT registration? Nothing else on this list
-   matters until this is answered, because the app currently has no working
-   authentication at all.
-2. **Watching a notification actually arrive.** Both channels are built and
-   neither has been seen delivering — every notification needs two accounts, and
-   only one test account exists. Worth doing together on two handsets.
-3. **A machine with room on it.** The upgrade filled the C: drive twice and
-   the emulator then would not start ([O-21](OBSERVATIONS.md)). Roughly 9 GB of
-   dead Gradle cache was cleared and it is back to ~3.5 GB free, which is not
-   enough headroom to build and run an emulator at the same time. This is now
-   the thing slowing everything else down.
+1. **SMS provider for the OTP** ([A-0](#a-0--an-sms-provider-so-the-otp-can-stop-being-000000--see-o-18))
+   — which one, and who starts the DLT registration? Agreed to be taken up the
+   week of 2026-08-31. The paperwork is the long pole, not the code.
+2. **Watching a push actually arrive.** FCM registration is proven end to end
+   and the poll fallback is proven to fire; what nobody has seen is a
+   notification travelling between two people. Every notification in the
+   product needs two parties and only one test account exists — worth ten
+   minutes together on two handsets.
+3. **The country code dropdown has one option** ([O-22](OBSERVATIONS.md)). A
+   fixed `+91` prefix inside the mobile field would be smaller and one less
+   thing to be uncertain about on the first screen. Keep the control only if a
+   second country is actually coming.
+4. **UI feedback.** This is the round that decides most of what happens next.
+   The app on the emulator is current: Comfortaa back, map on OpenStreetMap,
+   light theme only, both languages.

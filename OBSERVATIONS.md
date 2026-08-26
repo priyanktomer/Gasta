@@ -56,6 +56,54 @@ moving home clears the previous one, and another account gets a 400.
 
 ---
 
+### O-13. `google_maps_flutter` is a dead dependency
+
+The only `GoogleMap(` in the app is **commented out**
+(`new_address_screen_2.dart`), along with its `onTap` handler. What remains is a
+`_mapController` that is always null — correctly guarded, so nothing crashes —
+and a dependency that still pulls the Google Maps SDK into every build.
+
+**Why it matters:** the Maps SDK is one of the larger things an Android or iOS
+app can carry, and this audience is on cheap phones and metered data. There is
+also no Maps API key configured on either platform, so the map could not render
+even if uncommented.
+
+**Not removed**, because the code around it reads like the map is meant to come
+back — there is a careful note about what `_selectLocation` should do when it
+does. That is a product call: is the map returning, or is the address form
+staying typed?
+
+**Size:** one line of pubspec either way. The decision is the work.
+
+---
+
+### O-12. `POST_NOTIFICATIONS` is not declared
+
+Android 13+ requires it before an app may show a notification. It is absent from
+the manifest, so the moment push or any local notification is added, nothing
+will appear on a modern phone and nothing will say why.
+
+Not added yet: declaring a permission before anything requests it is how you get
+a permission prompt for a feature that does not exist. It goes in with Phase 10.
+
+**Size:** one line, at the right moment.
+
+---
+
+### O-11. Flutter is 3.27.1, from December 2024
+
+Everything is pinned to it, including the iOS minimum deployment target of 12.0
+— which is why raising that target would break the build rather than modernise
+it.
+
+An upgrade wants doing **before** a store submission rather than after: target
+SDK requirements, plugin compatibility and the iOS minimum all move together,
+and discovering that during a release is the expensive time to discover it.
+
+**Size:** a day, and a full regression pass.
+
+---
+
 ### O-1. Sign-up rejects every email except Gmail and Outlook
 
 **Answered 2026-08-26 — deliberate, and staying.** Those are what ordinary

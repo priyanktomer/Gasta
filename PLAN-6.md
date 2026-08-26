@@ -24,7 +24,10 @@ below is work, not risk.
 | Schema | Flyway builds it from nothing; `ddl-auto=validate` passes in production |
 | Tests | 77 backend, 27 app, all green |
 | App | Signed release build installs on a physical phone |
-| Hindi | 720 ARB keys, English and Hindi in exact parity |
+| Hindi | 780 ARB keys, English and Hindi in exact parity |
+| Fonts | Platform face for text, decorative one for the wordmark only |
+| Dark mode | **Off.** It was hiding data; light-only until the tokens adapt (§H) |
+| iOS | Configuration audited, never built or run — nobody has a Mac (§I) |
 | Push | Not built |
 | Store listing | Not started |
 | Crash reporting | An endpoint on our own service, rate-limited, 90-day retention |
@@ -91,7 +94,7 @@ temporary because it is. Roughly ₹700–900/year.
 
 ### B-1. Everything in OBSERVATIONS.md
 
-Ten entries, six resolved. The open ones worth pulling forward:
+Thirteen entries, six resolved. The open ones worth pulling forward:
 
 - **O-5** — profession names arrive as English prose. The most visible remaining
   English on otherwise-Hindi screens.
@@ -101,6 +104,11 @@ Ten entries, six resolved. The open ones worth pulling forward:
   rule. One sentence to fix.
 - **O-8** — check whether Actuator resolves now; `HealthController`'s reason for
   existing may have expired.
+- **O-11** — Flutter 3.27.1 is from December 2024. Upgrade before a store
+  submission, not after.
+- **O-12** — `POST_NOTIFICATIONS` is undeclared; push will silently show nothing
+  on Android 13+.
+- **O-13** — `google_maps_flutter` is dead weight; the only map is commented out.
 
 ### B-2. The Hindi audit nobody has done
 
@@ -296,40 +304,225 @@ phone, and it is a different threat from MITM. Worth doing; small.
 
 ---
 
-## F. Firebase — the exact steps
+## F. Firebase — the exact steps, both platforms
 
-The project **`gasta-app`** exists. What remains, in the console:
+The project **`gasta-app`** exists. Everything below assumes it.
+
+⚠️ **The iOS half is meaningfully harder than the Android half, and it is not
+optional to know that up front.** Android needs a JSON file. iOS needs an Apple
+Developer Program membership (₹8,900/year), a signing certificate, and an APNs
+key — Firebase does not deliver to iOS at all, it relays through Apple, and
+without the APNs key nothing arrives and nothing errors.
+
+### Android — console
 
 1. **Project overview → Add app → Android.**
-2. **Package name: `com.tomer.yapan`** — it must match exactly or the app will
-   not accept the config file. Nickname and the SHA-1 field can be left alone;
-   SHA-1 is only needed for Google Sign-In and Dynamic Links, neither of which
-   this app uses.
-3. **Download `google-services.json`** and put it at
-   `Yapan/android/app/google-services.json`. ⚠️ **Do not commit it.** It is not
-   a secret exactly — it ships inside every APK — but it identifies the project
-   and belongs with the other build-time config that stays out of git.
-4. **Project settings → Cloud Messaging** → confirm the **Firebase Cloud
-   Messaging API (V1)** is enabled. The legacy server key is deprecated and the
-   server side should use V1.
-5. **Project settings → Service accounts → Generate new private key.** That JSON
-   *is* a secret, goes on the server as `/opt/gasta/fcm-service-account.json`,
-   and never near git.
+2. **Package name `com.tomer.yapan`**, exactly. A mismatch is silently rejected
+   at runtime rather than at build time.
+3. Nickname and SHA-1 can be skipped — SHA-1 is for Google Sign-In and Dynamic
+   Links, neither of which this app uses.
+4. **Download `google-services.json` → `Yapan/android/app/google-services.json`.**
+   ⚠️ Not in git. It is not a secret exactly — it ships inside every APK — but it
+   belongs with the other build-time config that stays out of the repository.
 
-Then the code: `PushSender` and `LoggingPushSender` already exist and every call
-site is wired (T11.3), so the server side is one implementation swapped in
-behind a config flag. The app side needs the FCM handler and the token
-registration.
+### iOS — console and Apple
 
-**And the half that needs none of this:** the WorkManager poll fallback. On
-Xiaomi, Oppo, Vivo and Realme a real share of pushes never arrive — aggressive
-battery management kills background services, and this audience is largely on
-exactly those handsets. The poll is arguably the more important half for Gasta
-and can be built without Firebase existing at all.
+5. **Add app → iOS.** Bundle ID must match `PRODUCT_BUNDLE_IDENTIFIER` in the
+   Xcode project. ⚠️ **Check what that actually is** — the Android package is
+   `com.tomer.yapan`, and nobody has verified the iOS one because nobody has
+   opened the project.
+6. **Download `GoogleService-Info.plist` → `Yapan/ios/Runner/`,** and add it to
+   the Xcode target. Dropping it in the folder is not enough — it has to be in
+   the project or it will not be in the bundle.
+7. **Apple Developer Program membership.** Required before any of the below.
+8. **Create an APNs authentication key** (Keys → new key → Apple Push
+   Notifications service). Download the `.p8` **once** — Apple does not let you
+   download it again.
+9. **Firebase → Project settings → Cloud Messaging → iOS app → upload the `.p8`**
+   with its Key ID and your Team ID.
+10. **Xcode: add the Push Notifications capability**, and Background Modes →
+    Remote notifications.
+
+### Server
+
+11. **Project settings → Service accounts → Generate new private key.** That JSON
+    **is** a secret: `/opt/gasta/fcm-service-account.json`, never in git, and it
+    wants a line in `deploy/.env` pointing at it.
+12. Confirm **Firebase Cloud Messaging API (V1)** is enabled. The legacy server
+    key is deprecated and the server side should use V1.
+
+### What the code needs
+
+`PushSender` and `LoggingPushSender` already exist and **every call site is
+already wired** (T11.3), so the server side is one implementation swapped in
+behind a config flag — the smallest part of this.
+
+The app needs: `firebase_core` + `firebase_messaging`, token registration on
+login and on refresh, a foreground handler, a background handler (a top-level
+function — a common mistake is making it a method and getting silence), and
+permission request. ⚠️ **On iOS notification permission must be requested
+explicitly**; on Android 13+ so must `POST_NOTIFICATIONS`, which is **not
+currently in the manifest**.
+
+### The half that needs none of this
+
+**The WorkManager poll fallback.** On Xiaomi, Oppo, Vivo and Realme a real share
+of pushes never arrive — aggressive battery management kills background
+services, and this audience is largely on exactly those handsets. The poll needs
+no Firebase project, no Apple membership, and no APNs key, and it is arguably the
+more important half for Gasta.
+
+⚠️ **Whatever happens with push, nothing that costs somebody money or a day's
+work may depend on it** — the crew-release decision, the advance confirmation and
+the visit reminder all assume the user opens the app. Push is an accelerator, not
+the mechanism. That was PLAN-5 Phase 10's rule and it still holds.
 
 ---
 
-## G. Product work, unranked
+## G. Query shape on listing endpoints
+
+**Asked for on 2026-08-26:** listing endpoints should hit the database with
+minimal joins; detail endpoints may carry more.
+
+### The measurement
+
+One call to `get-my-posted-tasks` on the dev database, before any change:
+
+| | statements | tables |
+|---|---|---|
+| Before | **15** | 9 — `profession` ×3, `app_users` ×3, `sub_profession` ×2 … |
+| After LAZY on unread relations | 13 | `sub_profession` gone |
+| After `@EntityGraph` on the list query | **9** | `profession` gone |
+
+Forty percent fewer round trips for a DTO of about twenty scalar fields.
+
+### The cause, which is systemic
+
+**JPA defaults `@ManyToOne` and `@OneToOne` to EAGER**, and there are **97 of
+them in this codebase with no fetch type declared**. `Task` alone has ten, and
+`Task.address` drags in two more. So every query that loads a Task loads a graph,
+and a list loads that graph once per row unless something stops it.
+
+`getUpdatedBy()` is the clearest case: **zero callers anywhere**, fetched on
+every Task query including every list. An audit column nobody reads, costing a
+join on the hottest path in the product.
+
+### The pattern, for the endpoints not yet converted
+
+1. **Make relations LAZY where nothing reads them.** Check for callers first —
+   `grep -rn "\.getThing()"` — and remember that a LAZY proxy is safe to *assign*
+   without initialising it.
+2. **`@EntityGraph(attributePaths = {…})` on the list query** for the relations
+   the DTO genuinely reads. They still have to be loaded; the graph makes it one
+   join instead of one SELECT each.
+3. **Name only what the list renders.** That is the principle. A fuller graph
+   belongs on detail endpoints, where one row justifies it.
+
+### ⚠️ The order matters, and getting it wrong breaks serialisation
+
+Several endpoints still return **raw entities** — `get-user-address` is one. If
+a relation on a raw-returned entity is made LAZY, Jackson meets an uninitialised
+proxy outside the session and either throws or emits nonsense. **DTO first, then
+LAZY.** `AppUserAddress.state` is deliberately still eager for exactly this
+reason.
+
+### Not yet done
+
+Every other list endpoint: the earner's task list, quotes, doorstep orders,
+notifications. Same two steps each, and each wants its own before/after count
+rather than a guess — turn on `spring.jpa.show-sql` and count.
+
+---
+
+## H. Dark mode
+
+**Off as of 2026-08-26**, and this is worth reading before someone turns it back
+on.
+
+`ThemeMode.system` was set and a `darkTheme` existed, so a phone in dark mode
+got one — and it hid data rather than merely looking wrong. On the profile
+screen the user's own name and every field value were invisible.
+
+The mechanism is systemic:
+
+- `AppText.title/body/label/…` carry **no colour**, so text inherits the theme's
+  foreground: near-black in light, near-white in dark.
+- `AppSemanticColors.surface` is `static const Color(0xFFFFFFFF)`. Every card,
+  sheet and tile is painted with it **in both modes**, because a `const` cannot
+  know the brightness.
+
+White text on a white card, everywhere those two meet — which is most screens.
+The strings that survived are the ones that happened to set a colour explicitly,
+which is why the username showed and the name above it did not.
+
+### What real dark support needs
+
+1. **Brightness-aware tokens.** A `ThemeExtension<GastaColors>` registered on
+   both themes, with `AppSemanticColors.of(context).surface` replacing the
+   statics. Roughly 200 call sites.
+2. **The 107 hardcoded `Colors.white` / `Colors.black`.**
+3. **A dark palette that is designed**, not derived. `muted` (#5F6368) is tuned
+   for contrast on a light background and fails on a dark one; the status colours
+   need checking at both brightnesses.
+4. **Every screen checked twice.** That is the part that takes the time.
+
+Until then, a user in dark mode gets the light theme, which is designed, tested
+and legible. One line in `main.dart` reverses it.
+
+---
+
+## I. iOS
+
+**Never built, never run.** There is no Mac in this project, so everything below
+is a configuration audit — real findings, but not a substitute for someone
+opening Xcode.
+
+### Fixed 2026-08-26
+
+- **Landscape was allowed.** `main.dart` locks portrait, but on iOS
+  `SystemChrome` can only choose among what `Info.plist` permits, so the plist
+  was undoing it. An iPhone would have rotated into the broken layout Android is
+  protected from.
+- **Generic purpose strings.** "Your app needs access to your location." is close
+  to the example in Apple's own guidance of what not to write, and Apple rejects
+  them.
+- **Two `NSLocationAlways*` keys** for background location the app never uses.
+- **`NSBiometricUsageDescription`**, which is not a real key — Apple only reads
+  `NSFaceIDUsageDescription`.
+- **Missing `LSApplicationQueriesSchemes`.** Without `tel`, `canLaunchUrl`
+  answers false and the call button does nothing — including on the safety
+  screen.
+
+### Still open, and only a Mac can close most of it
+
+1. **Build it once.** `flutter build ios` will generate the Podfile and reveal
+   whatever the plugin set does not like. Nothing below can be trusted until
+   this has happened.
+2. **`permission_handler` needs Podfile macros.** Without them it compiles in
+   *every* permission it supports, and the App Store asks why an app that shows
+   nearby work wants the microphone. This is a known rejection cause and the fix
+   is a `GCC_PREPROCESSOR_DEFINITIONS` block in the Podfile.
+3. **Signing.** No provisioning profile, no certificate, no App Store Connect
+   record.
+4. **The launch storyboard and icons** are Flutter's defaults.
+5. **`CFBundleName` is `yapan`** while the display name is `Gasta`. Harmless —
+   the home screen uses the display name — but worth aligning.
+6. **Hindi on iOS.** The platform font change (2026-08-26) means text now uses
+   San Francisco, whose Devanagari coverage is good; worth confirming on a real
+   device that the clamps in `AppText` still read well.
+7. **`IPHONEOS_DEPLOYMENT_TARGET` is 12.0**, which is correct for Flutter 3.27.1.
+   Do not raise it without also upgrading Flutter — it looks like an easy win
+   and is not one.
+
+### One thing that is not iOS-specific
+
+**Flutter is 3.27.1, from December 2024.** Everything here is pinned to it,
+including the iOS minimum. An upgrade is its own piece of work and wants doing
+before a store submission rather than after.
+
+---
+
+## J. Product work, unranked
 
 Nothing here has been agreed. It is written down so it is not re-derived.
 
@@ -345,7 +538,7 @@ Nothing here has been agreed. It is written down so it is not re-derived.
 
 ---
 
-## H. On retiring PLAN 1–5
+## K. On retiring PLAN 1–5
 
 The product owner asked whether the old plan files can be removed now that the
 main development phase is over.

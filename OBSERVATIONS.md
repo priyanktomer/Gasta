@@ -223,10 +223,37 @@ opened a worse hole — worth remembering as the cost of touching a shared path.
 never navigates. A background call whose token is stale simply fails; the next
 time somebody opens the app it refreshes properly, with a user there.
 
-**What is still not proven** is that these two were the *only* mechanisms. The
-four-minute rejection above has not been reproduced since, and it may have been
-this one all along — a poll firing between the sign-in and the next launch fits
-it. Left open until a session survives a day.
+**The root cause, found 2026-08-28 by reading the app's own log:**
+
+```
+[api] POST .../common/secure/refresh-token -> 401
+      {"payload":"Failure, exception occured: Invalid Session"}
+```
+
+**A refresh started before the user signed in was landing after they had.**
+
+`StartupWrapper` reads the stored token at launch and refreshes it. The login
+screen *is* where launch ends — so on any device where the user types faster
+than that refresh completes, the sign-in replaces the session first, the old
+refresh token stops being valid, and the server correctly answers 401.
+
+⚠️ **Acting on that 401 cleared the tokens of the session created seconds
+earlier.** The user signed in successfully and was thrown straight back to the
+login screen. That is the logout that had been happening all day, and none of
+the three earlier fixes touched it.
+
+**Fixed:** before treating a rejection as final, compare the stored refresh
+token with the one the call actually used. If they differ, somebody has moved
+on and this answer is about a session that no longer matters — discard it.
+
+⚠️ **Two days of inferring this from the outside got nowhere.** The access log
+showed a correct 401 for a genuinely dead token, so the server always looked
+right and the app always looked unprovoked. **One debug build showed it in one
+line.** Next time a client-side mystery lasts more than an hour, build the debug
+APK first — it is twenty minutes and it ends the guessing.
+
+**Verified:** sign in, and the session holds through onboarding rather than
+bouncing to login.
 
 ---
 

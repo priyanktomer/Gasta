@@ -247,12 +247,24 @@ Correct, and it will lock the product owner out the first time their ISP hands
 them a different address. The runbook says how to move it. A better answer is
 OCI Bastion (Always Free), which needs no standing rule at all.
 
-### C-3. `ddl-auto` and a second environment
+### C-3. ⚠️ A second environment — now the **only** thing standing between an entity edit and production
 
 There is one database and it is production. A staging compartment on the same
-tenancy would cost nothing in Always Free terms and would let a migration be
-tried before it runs against real work records. Worth it the moment there is
-real data worth protecting — which is roughly now.
+tenancy would cost nothing in Always Free terms and would let a change be tried
+before it runs against real work records. Worth it the moment there is real data
+worth protecting — which is roughly now.
+
+**The `ddl-auto` half of this item is settled and went the other way.** As of
+2026-08-27 the schema is authored by the entities and Flyway is off — see
+[O-30](OBSERVATIONS.md). That makes the second environment *more* important, not
+less: under Flyway a bad change was a file somebody could read before it ran.
+Now a renamed `@Entity` field reaches production as an `ALTER` that Hibernate
+issues on startup, with nothing in between.
+
+⚠️ And `update` never drops or renames. So the failure mode is not a crash — it
+is a new column quietly appearing beside the old one, the old one still holding
+every row of real data, and no error anywhere. A staging database is where that
+gets noticed.
 
 ---
 
@@ -784,7 +796,7 @@ than bugs.
 
 ---
 
-### L-1. "How many people do you need?" is asked of everyone, and promises work that may not exist
+### L-1. ◐ Headcount is no longer asked of everyone (2026-08-27); partial fill is still open
 
 > *"I hope we ask user at some point what if only 2 of 5 got hired, then we
 > can't give fake hope of employment to earner even for a min. And why how many
@@ -822,6 +834,18 @@ added later does not inherit a question nobody meant to ask.
 
 **Size:** a migration, one DTO field, one `if` in the app. Half a day, plus the
 list.
+
+**✅ Built 2026-08-27.** `profession.ASKS_HEADCOUNT`, defaulting to **false**
+rather than preserving the old ask-everybody behaviour — asking should be the
+exception, and a profession added later must not inherit a question nobody
+decided to ask. Live and verified: four professions ask, and they are exactly
+the "buying hours" set — Construction Laborer, Farm Laborer, Farmer for lease,
+Harvesting Contractor. A bride booking a makeup artist is not asked.
+
+⚠️ Which professions get the flag is set by `ReferenceDataSeeder`, matching on
+**name fragments**, which is O-23's problem again: a profession has no stable
+code, only a display name. Renaming one in the admin screen silently changes
+who gets asked.
 
 #### Partial fill quietly promises work
 

@@ -827,3 +827,38 @@ but a `target/` with two fat jars in it is a directory where somebody eventually
 ships the wrong one.
 
 **Size:** `mvn clean` once.
+
+---
+
+### O-24. 🔴 A one-word MySQL incompatibility took the live API down
+
+**2026-08-27, during §L-1.** `V22__profession_asks_headcount.sql` was written as
+`ALTER TABLE profession ADD COLUMN IF NOT EXISTS ...`. **MySQL 8 has no
+`IF NOT EXISTS` on `ADD COLUMN`** — that is MariaDB. It parses as a column named
+`IF`, fails with a 1064, and Flyway records a `success = 0` row.
+
+Two things about that are worth more than the typo:
+
+⚠️ **A failed migration is a latch, not a retry.** Every subsequent start fails
+validation with *"Detected failed migration to version 22"* until the row is
+deleted by hand. And it latches on the **old image too** — rolling back does not
+help, because the row is in the database, not the jar. There is no way out
+except touching `flyway_schema_history`.
+
+⚠️ **The migration was never run before it was deployed.** V21 the same day was
+fine, which is luck: `CREATE TABLE IF NOT EXISTS` *is* valid MySQL. The
+difference between the two files was invisible to review and would have taken
+one second to catch against a real MySQL 8.
+
+**What actually prevents this**, cheapest first:
+
+1. **Run the migrations against MySQL 8 in a test.** `docker-compose.local.yml`
+   already stands one up. A single test that boots the context against it turns
+   this class of bug from an outage into a red build. This is §C-1's real value
+   and it is the reason to do it.
+2. Deploy to a staging database first — §C-3, already on the plan.
+
+⚠️ **The health watcher (§B-4) did its job and nobody was there to read it.**
+It logged `DOWN http=502` to `/var/log/gasta-health.log` exactly as designed.
+That is the gap §B-4 names in its own footer: it reaches a person only if a
+person reads the file.

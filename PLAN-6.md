@@ -962,7 +962,7 @@ failure path.
 
 ---
 
-### L-4. "What should they know" should be profession-specific
+### L-4. ~~"What should they know" should be profession-specific~~ ✅ done 2026-08-27
 
 > *"While posting a job, step 3 u made what should they know that is really
 > really good thing u added, just need to make it profession/subprofession
@@ -989,6 +989,31 @@ adding one, and it is the right cost.
 **Size:** a migration, one DTO field, and deleting a hardcoded list. A day,
 mostly spent deciding which notes belong to which profession — again the part
 that needs a person.
+
+**Built 2026-08-27** — V21 `profession_note_option`, deployed and verified live.
+A Maid is now offered `FOOD_PROVIDED, UPSTAIRS, OUTDOOR, DOG, RING_BELL`; a
+Mistri/Mason gets the tool chips and heavy lifting and no longer gets food; a
+Farm Laborer gets both sets.
+
+Three decisions worth keeping:
+
+- **A null `PROFESSION_ID` means everybody.** The ordinary notes — upstairs,
+  outdoor, dog, ring the bell — are four rows, not four rows per profession, so
+  adding a profession cannot mean forgetting to give it them.
+- **⚠️ Two fallbacks, both deliberate.** An empty list from the server makes the
+  app show all eight rather than an empty step, so a server older than this
+  still works; and a code the app has no label for is *dropped*, not rendered,
+  so a code added on the server never reaches a user as `SOMETHING_NEW`.
+- **⚠️ The seeding matches profession names with `LIKE`** — `'%mistri%'`,
+  `'%harvest%'`. That is a symptom of [O-23](OBSERVATIONS.md): professions have
+  no stable code, only a display name, so every piece of data that needs to
+  refer to one has to guess. It works today and it breaks the day somebody
+  renames a profession.
+
+Sub-professions were left out. The table has room for the join and nothing
+asked for it yet — a maid's notes do not change between "cooking" and
+"cleaning", and the chips that would differ are the ones L-2's garment menu
+covers properly.
 
 ---
 

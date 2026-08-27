@@ -20,6 +20,50 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-31. Wiping the database is what proved the rebuild works — and it did not, three times over
+
+**2026-08-27.** The product owner asked for a complete wipe and said the catalog
+was in the code. I said it was not. **He was right and I was wrong** — see the
+correction in [O-30](#o-30). `InitServiceImpl` holds 50 professions, 104
+sub-professions, 36 states and the countries, and runs when the account
+`8191910695` signs up.
+
+But the wipe did what only a wipe can: it found the parts that were **not** in
+any code, each of which had been quietly carried by a migration.
+
+1. **`SUPPORTS_PICKUP_DROP` came from V20.** Rebuilt database, zero doorstep
+   professions, an empty Doorstep grid — [O-23](#o-23) returning by a different
+   route within a day of being fixed.
+2. **Two professions existed only in production.** Water Supply and Cylinder
+   and Heavy Item Delivery were added through the admin API and never written
+   down, so the live database had 52 and the code produced 50. They would have
+   been gone for good.
+3. **Ten `service_variant` rows came from V5.** Wash, iron and wash-and-iron
+   under laundry; cans, cylinders, documents and tiffin under the others.
+   Without them Doorstep Services lists a profession with nothing orderable
+   under it.
+
+All three are in Java now, and a wipe-and-rebuild reproduces **52 professions,
+104 sub-professions, 36 states, 10 variants, 35 note chips, 3 doorstep, 4
+headcount** — verified by doing it twice.
+
+⚠️ **Two ordering bugs fell out of it, and both are the same shape.**
+
+- `ReferenceDataSeeder` runs at startup, which on an empty database is *before*
+  any profession exists — so it attached nothing, and the catalog arrived later
+  over HTTP. `InitServiceImpl` calls it explicitly now.
+- The variant match was a bare `contains("wash")`, which handed **Automobile
+  Washer** a laundry menu priced per garment.
+
+⚠️ **The lesson worth keeping.** Every one of these was invisible on the live
+database, which already had the rows. "It works in production" says nothing
+about whether production could be rebuilt — and until yesterday nobody had ever
+tried. `SchemaBuiltFromEntitiesTest` builds an untouched schema for exactly this
+reason, but it does not call `initial-setup`; **extending it to assert the full
+catalog comes back is the obvious next guard** and is written up in PLAN-7.
+
+---
+
 ### O-28. ~~🔴 A one-word MySQL incompatibility took the live API down~~ ✅ resolved 2026-08-27
 
 **2026-08-27, during §L-1.** `V22__profession_asks_headcount.sql` was written as
@@ -125,13 +169,23 @@ per column is a per-change tax that bought an outage.
 Data seeding moved to `ReferenceDataSeeder` — idempotent, guarded by a read,
 never fatal. That is the sanctioned way to put rows in a table now.
 
-⚠️ **The profession catalog is still not owned by anything.** 52 professions and
-104 sub-professions exist only in the database and in
-`/opt/gasta/backups/*.sql.gz`. No code creates them, and `demo-data.py` reads
-them rather than making them. **A database drop loses the catalog**, and the
-only route back is a restore. That was true under Flyway too — V1 is
-schema-only — so nothing regressed, but it is now the single most valuable
-un-versioned thing in the system.
+⚠️ ~~**The profession catalog is still not owned by anything.**~~ **Wrong — I
+checked the wrong places.** `InitServiceImpl` holds the whole catalog as Java:
+50 professions, 104 sub-professions, 36 states and the countries. It runs from
+`POST /admin-user/super-user/initial-setup`, and automatically when the account
+`8191910695` signs up. A wiped database rebuilds itself.
+
+I had searched for `new Profession(` and for seed files, and the catalog is
+built from `AddProfessionDto` — so both searches missed it and I told the
+product owner a database drop would lose 52 professions permanently. He said
+the code had it. He was right.
+
+⚠️ **One real gap did exist**, found by looking properly: the ten
+`service_variant` rows — the wash / iron / wash-and-iron options under laundry,
+and the cans and cylinders under the other doorstep services — came from
+`V5__service_variants.sql` and were in no Java at all. Deleting the migrations
+would have left Doorstep Services showing professions with nothing orderable
+under them. They are in `ReferenceDataSeeder` now.
 
 **What turning Flyway off silently dropped**, found the same day by running the
 integration suite against a database built from nothing:
@@ -273,7 +327,7 @@ since the category heading already says Construction.
 
 ---
 
-### O-23. ~~Laundry is missing from Doorstep Services~~ ✅ fixed 2026-08-27
+### O-23. ~~Laundry is missing from Doorstep Services~~ ✅ fixed 2026-08-27 — ⚠️ regressed the same day on the wipe, see [O-31](#o-31)
 
 The Doorstep grid lists **Cylinder and Heavy Item Delivery** and **Water
 Supply**, both "Coming soon". Laundry and Appliance Mechanic do not appear at

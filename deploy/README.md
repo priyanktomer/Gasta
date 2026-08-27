@@ -1,7 +1,30 @@
 # Deploying Gasta
 
-One VM, one application, one public port. This directory is everything that
-runs on the server.
+One VM, **two stacks**, one public port. This directory is everything that runs
+on the server.
+
+👉 **For day-to-day commands — pointing the app at staging or prod, seeding demo
+data, rebuilding a database, reading logs — see [RUNBOOK.md](../RUNBOOK.md).**
+This file is the reasoning behind the setup.
+
+## Staging
+
+`docker-compose.staging.yml` runs a second API, MySQL and Redis under the
+compose project `gasta-staging`, served by the same Caddy at
+`staging.yapan.duckdns.org`. Its API joins prod's network so Caddy can reach it;
+its database and Redis do not, so they are reachable from nothing but their own
+API — exactly as in production.
+
+```
+cd deploy && ./deploy.sh ubuntu@yapan.duckdns.org staging
+```
+
+⚠️ Its own MySQL **container and volume**, not a second schema on prod's server:
+a second schema would leave one bad `ddl-auto` run able to reach production
+data, which is the entire reason it exists. Memory is capped at about half of
+prod's, so a runaway staging container is a staging problem rather than an
+outage. Not backed up, deliberately — if losing it would hurt, it has stopped
+being staging.
 
 ## What this is, and what it deliberately is not
 

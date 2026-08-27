@@ -1,0 +1,127 @@
+# A staging copy of the backend, on the same host (PLAN-7 §C-1).
+#
+# ⚠️ **Why this exists.** The schema is authored by the `@Entity` classes and
+# applied by `ddl-auto=update` (O-30). Under Flyway a bad change was a file
+# somebody could read before it ran; now a renamed field reaches production as
+# an `ALTER` Hibernate issues at startup, with nothing in between. And `update`
+# never drops or renames — so the failure is not a crash, it is a new column
+# appearing quietly beside the old one, the old one still holding every row of
+# real data, and no error anywhere.
+#
+# This is the "in between".
+#
+# ## Why the same host, and not a second VM
+#
+# The risk being guarded is a schema or data change, and a second database on
+# this host catches that exactly as well as one on another machine. A second VM
+# would double the operational surface — another SSH allowlist, another Caddy,
+# another backup job, another certificate — for no additional cover on the thing
+# that actually goes wrong.
+#
+# ⚠️ **What this cannot catch, stated plainly:** anything about the host itself.
+# A full disk, a kernel or Docker upgrade, an OCI network rule — staging shares
+# all of it, so it will never warn about any of it. If those become the failure
+# mode, that is when a second VM earns its place.
+#
+# ⚠️ **Memory is capped so staging cannot starve production.** Half of what prod
+# gets, which is ample for one developer poking at it, and the reason a runaway
+# staging container is a staging problem rather than an outage.
+#
+#     ./deploy.sh ubuntu@host staging
+#
+name: gasta-staging
+
+services:
+  api:
+    image: gasta-api:${GASTA_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # ⚠️ Its own database, on its own MySQL container, with its own volume.
+      # Sharing prod's server and using a second schema would mean one bad
+      # `ddl-auto` run could still reach production data — which is the entire
+      # thing this file exists to prevent.
+      GASTA_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-gasta}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata
+      GASTA_DB_USERNAME: ${MYSQL_USER:?set MYSQL_USER in .env.staging}
+      GASTA_DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env.staging}
+      GASTA_REDIS_HOST: redis
+      GASTA_REDIS_PORT: 6379
+      GASTA_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}
+      GASTA_ALLOWED_ORIGINS: https://${GASTA_STAGING_DOMAIN:?set GASTA_STAGING_DOMAIN in .env.staging}
+      # ⚠️ Push is deliberately NOT configured here. `FcmPushSender` is
+      # @ConditionalOnProperty on this path, so leaving it unset means staging
+      # logs pushes instead of sending them — and a test on staging cannot
+      # notify a real user's phone.
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - internal
+      # ⚠️ Prod's network, joined so prod's Caddy can reach this container by
+      # name. It is the only service here that joins it — the staging database
+      # and Redis stay on the internal network and are reachable from nothing
+      # but this API, exactly as in production.
+      - gasta_internal
+    deploy:
+      resources:
+        limits:
+          memory: 1500m
+
+  mysql:
+    image: mysql:8.0.46
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env.staging}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gasta}
+      MYSQL_USER: ${MYSQL_USER:?set MYSQL_USER in .env.staging}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env.staging}
+      TZ: Asia/Kolkata
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+05:30
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+networks:
+  internal:
+    driver: bridge
+  # Created by the production stack. Declared external so this file never
+  # tries to manage it — bringing staging down must not touch prod's network.
+  gasta_internal:
+    external: true
+
+volumes:
+  mysql_data:
+  redis_data:

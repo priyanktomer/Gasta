@@ -289,7 +289,7 @@ Three coherent answers, and one of them should be picked:
 
 ## C. Engineering debt, in the order it will hurt
 
-### C-1. A staging database — now the only thing between an entity edit and production
+### C-1. ~~A staging database~~ ✅ done 2026-08-27
 
 There is one database and it is production.
 
@@ -303,10 +303,47 @@ And `update` **never drops or renames**. So the failure mode is not a crash —
 it is a new column appearing quietly beside the old one, the old one still
 holding every row of real data, and no error anywhere.
 
-**How:** a second compartment on the same Oracle tenancy, free tier, and a
-`docker-compose.staging.yml`. Deploy there first.
+**Built, and not the way this said.** The plan called for a second compartment;
+it is a second **stack on the same host**, and that was the right trade:
 
-**Size:** a day.
+- The risk being guarded is a schema or data change, and a second database here
+  catches that exactly as well as one on another machine.
+- A second VM doubles the operational surface — another SSH allowlist, another
+  Caddy, another backup job, another certificate — for no extra cover on the
+  thing that actually goes wrong.
+- The host had room: 12 GB with 10 free, and staging adds about 850 MB.
+
+`https://staging.yapan.duckdns.org` — any subdomain of a DuckDNS name resolves
+to the same IP, so it needed no DNS record. Deploy with:
+
+```
+./deploy.sh ubuntu@host staging
+```
+
+⚠️ **Its own MySQL container and its own volume**, not a second schema on
+prod's server. A second schema would leave one bad `ddl-auto` run able to reach
+production data, which is the entire thing this exists to prevent.
+
+⚠️ **Memory is capped at roughly half of prod's**, so a runaway staging
+container is a staging problem rather than an outage.
+
+⚠️ **Push is deliberately unconfigured on staging.** `FcmPushSender` is
+`@ConditionalOnProperty` on the credentials path, so leaving it unset means
+staging logs pushes instead of sending them — a test there cannot make a real
+user's phone buzz.
+
+⚠️ **What this cannot catch, stated plainly:** anything about the host. A full
+disk, a Docker or kernel upgrade, an OCI network rule — staging shares all of
+it and will never warn about any of it. That is when a second VM earns its
+place, and not before.
+
+**Verified:** both hostnames answer 200, staging responses carry
+`X-Gasta-Environment: staging`, and the two databases are provably separate —
+prod holds 52 professions and 31 tasks, staging came up empty and then rebuilt
+its own catalog from code to the same 52/104/36/10/3.
+
+**Not backed up, on purpose.** `nightly-backup.sh` covers prod only. Staging is
+meant to be disposable; if losing it would hurt, it has stopped being staging.
 
 ---
 

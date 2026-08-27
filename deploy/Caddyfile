@@ -65,6 +65,55 @@
 	}
 }
 
+# ── Staging (PLAN-7 §C-1) ──────────────────────────────────────────────────
+#
+# The same API, a different database, so an entity change can be run somewhere
+# before it runs against real work records. See docker-compose.staging.yml for
+# why it shares this host.
+#
+# ⚠️ **This block is harmless when staging is not running.** Caddy will still
+# obtain a certificate for the name, and requests get a 502 until the container
+# exists. That is deliberate: the alternative is editing this file every time
+# staging is brought up or down, and a config that changes often is a config
+# that eventually goes out with a mistake in it.
+#
+# ⚠️ Its own hostname, not a path prefix on the production one. A path would
+# mean the app's `GASTA_API_BASE` differs by a suffix that is easy to get wrong
+# and impossible to see in a screenshot; a hostname is visible in every log line
+# and in the certificate.
+{$GASTA_STAGING_DOMAIN:staging.invalid} {
+	reverse_proxy gasta-staging-api-1:8080 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		# ⚠️ No HSTS here, unlike production. Staging is the host most likely to
+		# be served badly at some point, and a year-long browser commitment to
+		# HTTPS on a name used for experiments is a trap rather than a
+		# protection.
+		-Server
+		# So a response is never mistaken for production's in a log or a
+		# screenshot.
+		X-Gasta-Environment staging
+	}
+
+	request_body {
+		max_size 10MB
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
+
 # Plain HTTP exists only so Let's Encrypt's HTTP-01 challenge can be answered
 # and so a stray http:// request is redirected rather than refused. Caddy adds
 # this redirect automatically for any site with a hostname — it is written out

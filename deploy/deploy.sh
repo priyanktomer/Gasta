@@ -22,10 +22,34 @@ set -euo pipefail
 
 TARGET="${1:-}"
 if [[ -z "$TARGET" ]]; then
-	echo "usage: $0 user@host [tag]" >&2
+	echo "usage: $0 user@host [staging|prod] [tag]" >&2
 	exit 2
 fi
+
+# ⚠️ **Which stack.** `prod` is the default, so an existing habit of typing
+# `./deploy.sh ubuntu@host` keeps meaning exactly what it always meant. Staging
+# has to be asked for by name — the failure worth preventing is deploying to
+# production while believing you are on staging, not the reverse.
+ENVIRONMENT="prod"
+case "${2:-}" in
+	staging|prod) ENVIRONMENT="$2"; shift ;;
+esac
+
 TAG="${2:-$(git -C .. rev-parse --short HEAD 2>/dev/null || echo latest)}"
+
+if [[ "$ENVIRONMENT" == "staging" ]]; then
+	COMPOSE_FILE="docker-compose.staging.yml"
+	ENV_FILE=".env.staging"
+	API_CONTAINER="gasta-staging-api-1"
+else
+	COMPOSE_FILE="docker-compose.yml"
+	ENV_FILE=".env"
+	API_CONTAINER="gasta-api-1"
+fi
+echo "==> environment: $ENVIRONMENT"
+
+# Overridable, so a second deployment elsewhere needs no edit here.
+STAGING_DOMAIN="${GASTA_STAGING_DOMAIN:-staging.yapan.duckdns.org}"
 
 # The instance key, not the default identity. Overridable for a second server.
 SSH_KEY="${GASTA_SSH_KEY:-$HOME/.ssh/gasta_oci}"
@@ -72,21 +96,43 @@ docker buildx build --platform linux/arm64 \
 # ── 3. ship ──────────────────────────────────────────────────────────────
 echo "==> copying to $TARGET:$REMOTE_DIR"
 ssh "${SSH_OPTS[@]}" "$TARGET" "sudo mkdir -p $REMOTE_DIR && sudo chown \$(id -u):\$(id -g) $REMOTE_DIR"
-scp "${SSH_OPTS[@]}" "$HERE/docker-compose.yml" "$HERE/Caddyfile" "$TARGET:$REMOTE_DIR/"
+# Both compose files and the Caddyfile go every time, whichever stack is being
+# deployed. ⚠️ The Caddyfile carries the staging site block, so a prod deploy
+# is what teaches prod’s Caddy about staging — deploying staging alone would
+# leave the proxy with no route to it.
+scp "${SSH_OPTS[@]}" "$HERE/docker-compose.yml" "$HERE/docker-compose.staging.yml" \
+	"$HERE/Caddyfile" "$TARGET:$REMOTE_DIR/"
 scp "${SSH_OPTS[@]}" "$HERE/gasta-api-$TAG.tar" "$TARGET:$REMOTE_DIR/"
 
 # Only if absent — see the warning at the top.
-ssh "${SSH_OPTS[@]}" "$TARGET" "test -f $REMOTE_DIR/.env" \
-	&& echo "==> .env already on the server, left alone" \
-	|| { echo "==> no .env on the server; copying the template — FILL IT IN THEN RE-RUN"; \
-	     scp "${SSH_OPTS[@]}" "$HERE/.env.example" "$TARGET:$REMOTE_DIR/.env"; exit 1; }
+#
+# ⚠️ Staging generates its own passwords **on the server** rather than asking
+# for them. They protect a throwaway database, nobody needs to know them, and a
+# secret that has to be typed is a secret that ends up in a chat log — which has
+# already happened once on this project (O-6).
+if [[ "$ENVIRONMENT" == "staging" ]]; then
+	ssh "${SSH_OPTS[@]}" "$TARGET" "test -f $REMOTE_DIR/$ENV_FILE" \
+		&& echo "==> $ENV_FILE already on the server, left alone" \
+		|| { echo "==> generating $ENV_FILE on the server"; \
+		     ssh "${SSH_OPTS[@]}" "$TARGET" "cd $REMOTE_DIR && umask 077 && printf \
+		       'GASTA_STAGING_DOMAIN=%s\\nMYSQL_DATABASE=gasta\\nMYSQL_USER=gasta\\nMYSQL_PASSWORD=%s\\nMYSQL_ROOT_PASSWORD=%s\\nREDIS_PASSWORD=%s\\n' \
+		       \"$STAGING_DOMAIN\" \
+		       \"\$(openssl rand -hex 24)\" \
+		       \"\$(openssl rand -hex 24)\" \
+		       \"\$(openssl rand -hex 24)\" > $ENV_FILE"; }
+else
+	ssh "${SSH_OPTS[@]}" "$TARGET" "test -f $REMOTE_DIR/.env" \
+		&& echo "==> .env already on the server, left alone" \
+		|| { echo "==> no .env on the server; copying the template — FILL IT IN THEN RE-RUN"; \
+		     scp "${SSH_OPTS[@]}" "$HERE/.env.example" "$TARGET:$REMOTE_DIR/.env"; exit 1; }
+fi
 
 # ── 4. load and restart ──────────────────────────────────────────────────
 echo "==> loading and restarting"
 ssh "${SSH_OPTS[@]}" "$TARGET" "cd $REMOTE_DIR \
 	&& docker load -i gasta-api-$TAG.tar \
 	&& rm -f gasta-api-$TAG.tar \
-	&& GASTA_TAG=$TAG docker compose up -d --remove-orphans \
+	&& GASTA_TAG=$TAG docker compose --env-file $ENV_FILE -f $COMPOSE_FILE up -d --remove-orphans \
 	&& docker image prune -f"
 
 rm -f "$HERE/gasta-api-$TAG.tar"
@@ -96,9 +142,9 @@ rm -f "$HERE/gasta-api-$TAG.tar"
 # containers are *created*.
 echo "==> waiting for health"
 ssh "${SSH_OPTS[@]}" "$TARGET" "cd $REMOTE_DIR && for i in \$(seq 1 40); do \
-	s=\$(docker inspect --format '{{.State.Health.Status}}' gasta-api-1 2>/dev/null || echo none); \
+	s=\$(docker inspect --format '{{.State.Health.Status}}' $API_CONTAINER 2>/dev/null || echo none); \
 	echo -n \"\$s \"; \
 	[ \"\$s\" = healthy ] && { echo; exit 0; }; \
 	sleep 10; done; echo; echo 'never became healthy — docker compose logs api'; exit 1"
 
-echo "==> deployed: $TAG"
+echo "==> deployed: $TAG to $ENVIRONMENT"

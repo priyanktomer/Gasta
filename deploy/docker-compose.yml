@@ -36,6 +36,11 @@ services:
       GASTA_DOMAIN: ${GASTA_DOMAIN:?set GASTA_DOMAIN in .env}
       # Let's Encrypt emails this address before a certificate expires.
       GASTA_ACME_EMAIL: ${GASTA_ACME_EMAIL:?set GASTA_ACME_EMAIL in .env}
+      # The staging hostname, so Caddy can serve it from the same instance
+      # (PLAN-7 §C-1). Defaulted rather than required: a host with no staging
+      # stack must still start, and `staging.invalid` is a name that can never
+      # resolve, so Caddy asks for no certificate for it.
+      GASTA_STAGING_DOMAIN: ${GASTA_STAGING_DOMAIN:-staging.invalid}
     networks: [internal]
     depends_on:
       api:

@@ -343,7 +343,7 @@ one-line check in the build command would do it, and belongs with CI (§C-1).
 
 ---
 
-### O-24. ~~Long profession names break mid-word on the tiles~~ ✅ fixed 2026-08-27
+### O-24. Long profession names break mid-word on the tiles — ⚠️ my fix was worse, reverted
 
 "Construction Laborer" renders as **"Constructio / n Laborer"** on the Post New
 Task grid — Flutter breaks inside the word when a line will not fit, rather than
@@ -368,9 +368,27 @@ All of them are a size somebody has to re-pick every time a name is added.
 
 `FittedBox(fit: BoxFit.scaleDown)` on the three grid labels shrinks a label
 only when it does not fit, never scales it up, and holds for Hindi — where
-compound profession names are longer still. Renaming "Construction Laborer" in
-the catalog would have fixed one tile and left the next one to be discovered by
-a user.
+compound profession names are longer still.
+
+⚠️ **Reverted the same evening. It was worse than the bug.**
+
+`scaleDown` shrinks each label *independently*, so the Popular Pros grid came
+out with "Maid" and "Painter" at full size next to "Construction Laborer" and
+"Agricultural Machinery" visibly smaller. **Twelve identical tiles, six
+different type sizes.** The product owner saw it immediately and was right: a
+grid of matching cards with mismatched text reads as broken in a way that one
+badly-wrapped word never did.
+
+**What that teaches for the next attempt.** The constraint is not "make this
+label fit" — it is **"every tile in the grid must share one size"**. So the fix
+has to be chosen for the whole grid at once: measure the longest label, pick one
+size that fits it, and apply that size to all twelve. Per-widget auto-fitting
+cannot get there by construction, and neither can a shorter name in the catalog
+— that fixes one tile and leaves the next to be found by a user.
+
+⚠️ And it should be verified on a **device screenshot** before being called
+done. This looked correct in code and in review, and was obviously wrong the
+moment somebody looked at the screen.
 
 ---
 

@@ -858,7 +858,7 @@ belongs.
 
 ---
 
-### L-2. Laundry is the main doorstep service and it is not even listed
+### L-2. Laundry ◐ listed again 2026-08-27; the garment menu is still open
 
 > *"yeah laundry is main in doorstep and this only should be enabled with proper
 > menu for wash and iron separately cloth wise like shirt, kurti, saree,
@@ -880,9 +880,13 @@ match what production holds. The banner icon on the screen is a washing machine,
 which is a leftover from when this screen was laundry-only and is now the only
 laundry on it.
 
-**First step is to look**, not to guess: list `profession` where
-`SUPPORTS_PICKUP_DROP`, and the names near "wash"/"iron"/"laundry". Then either
-the V5 name is wrong, or the flag did not take.
+✅ **Fixed by V20.** The flag had simply never been set — the row exists under
+exactly the name V5 looked for. V20 matches on what the row is *about* rather
+than one spelling, and re-adds the wash/iron variants if they were missed too.
+
+It shows as **Coming soon** because no provider has registered nearby, which is
+the honest state rather than a bug. Testing the booking flow needs somebody
+registered as a laundry provider first. See [O-23](OBSERVATIONS.md).
 
 #### The menu is one dimension short
 

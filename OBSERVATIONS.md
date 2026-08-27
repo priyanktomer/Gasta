@@ -136,7 +136,7 @@ since the category heading already says Construction.
 
 ---
 
-### O-23. Laundry is missing from Doorstep Services, and it is the main service
+### O-23. ~~Laundry is missing from Doorstep Services~~ ✅ fixed 2026-08-27
 
 The Doorstep grid lists **Cylinder and Heavy Item Delivery** and **Water
 Supply**, both "Coming soon". Laundry and Appliance Mechanic do not appear at
@@ -160,11 +160,28 @@ nobody can say what a fresh database should contain. That is also why
 `deploy/demo-data.py` asks the server which professions exist rather than
 assuming any.
 
-**First step is to look:** `SELECT ID, NAME, SUPPORTS_PICKUP_DROP FROM
-profession WHERE NAME LIKE '%ash%' OR NAME LIKE '%ron%'`.
+**Fixed by V20**, and the answer was almost the guess: the row exists under
+exactly the name V5 looked for — "Pickup Drop Cloth Wash and Ironing" — and
+`SUPPORTS_PICKUP_DROP` was simply never true on it. V5's UPDATE either ran
+before that row existed or matched nothing for another reason; either way it
+reported success.
 
-**Size:** an hour to diagnose. Seeding the catalog properly is a day, and worth
-doing.
+V20 matches on **what the row is about** rather than one spelling — `LIKE`
+against `wash`, `iron`, `laundr`, `dhobi`, excluding `automobile`/`car`/
+`vehicle` so "Automobile Washer" is not swept in — and re-inserts the
+WASH/IRON/WASH_AND_IRON variants if they are missing too, since those were
+keyed on the same failed match. Idempotent.
+
+It now shows on the grid, marked **Coming soon**, which is correct: no provider
+has registered nearby. To test the booking flow somebody has to register as a
+laundry provider first.
+
+⚠️ **The underlying problem is untouched.** The catalog every screen depends on
+is still owned by no migration, so nobody can say what a fresh database should
+contain, and the next feature keyed on a profession name will fail the same
+silent way. That is the part worth a day.
+
+**Size:** done. Seeding the catalog properly is still open.
 
 ---
 

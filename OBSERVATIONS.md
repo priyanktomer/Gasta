@@ -84,6 +84,40 @@ it was assuming only one thing would ever ask.
 
 ---
 
+⚠️ **Something else is still ending sessions, and it is not this.** Stated as
+unfinished rather than quietly dropped.
+
+After a clean sign-in the whole session was rejected roughly **four minutes**
+later — including the **access** token, which has a thirty-minute life. From the
+access log:
+
+```
+200  login-verify            <- signed in
+200  ...eight authenticated calls...
+401  get-unread-notification-count   <- four minutes later
+401  refresh-token
+```
+
+Rotation does not explain an access token failing at four minutes. Two
+candidates, neither confirmed:
+
+- **A stale `atsh`.** access-app checks `Authorization` together with a hash
+  header. `updateHeaders` reads the two from secure storage separately, so a
+  refresh landing between the two reads would pair a new token with the old
+  hash. Narrow, but it is a real window.
+- **Something server-side invalidating the session** on an event nobody has
+  identified — the library is off-limits (D-5) and gives no signal about why.
+
+⚠️ **What would settle it, and what I could not do from here:** log every
+refresh and every 401 with the token's `jti`, then watch one session die. A
+release build strips `debugPrint`, so this needs either a debug build on a
+device or a temporary logger that survives release.
+
+**Do not treat this entry as closed.** The single-flight fix is real and
+verified; it is one of at least two mechanisms.
+
+---
+
 ### O-38. "Early Morning Slot" is app-speak on a screen for people who do not read much
 
 **2026-08-27.** Step 2 of Post a Job offers **"Early Morning Slot"**, **"Late

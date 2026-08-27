@@ -20,6 +20,39 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-39. The consent screen came up in Hindi while the rest of the app was English
+
+**2026-08-27, seen on the screenshot pass.** Signing in as a new account, the
+"Before you start" consent screen rendered entirely in Hindi with an **English**
+toggle offered — while every other screen in the same session, before and after,
+was English.
+
+⚠️ **This is the one screen where it matters most.** It is the DPDP consent
+summary: the record says the person was shown what is collected and agreed to
+it. A screen that disagrees with the rest of the app about which language the
+user reads is a weak thing to point at later.
+
+The screen is bilingual **by design** — it carries both strings itself rather
+than using the translation table, so it can be read before any preference is
+known. That part is right. What is wrong is which one it picked: it reads
+`LanguageService.current()` in `initState`, and that returned `hi` while the app
+was rendering English everywhere else.
+
+So the two disagree, and only one of them can be right.
+
+⚠️ **Not chased.** Two theories about session behaviour were already wrong today
+([O-35](#o-35), [O-37](#o-37)) and guessing a third would have cost more than it
+was worth mid-pass. Recorded with what was actually seen.
+
+**Where to start:** whether `LanguageService.current()` and the `MaterialApp`
+locale read the same stored value, and whether anything writes the language
+outside the picker. If they read different things, that is the bug and it is
+wider than this one screen.
+
+**Size:** an hour to find, minutes to fix.
+
+---
+
 ### O-37. ~~Sessions ending far sooner than the tokens say they should~~ ✅ found and fixed 2026-08-27
 
 **2026-08-27, during the screenshot pass.** The signed-in emulator kept

@@ -20,6 +20,28 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-41. ~~Sign-up had no way back — the same bug the OTP screen was already fixed for~~ ✅ fixed 2026-08-28
+
+A phone number the server does not recognise lands on the sign-up form. That
+form had **no back arrow and no AppBar**, so the only visible way out was to
+close the app — on the screen where a wrong digit is most likely, because it is
+the digit you have just typed.
+
+⚠️ **This is AUDIT U8 again.** The OTP screen had exactly this problem and was
+fixed with a transparent AppBar and a `BackButton`; the comment explaining why
+is still sitting in `signin_screen.dart`. Sign-up was never given the same
+treatment, and nothing connected the two.
+
+**Worth noticing about how it was found:** the bug was in front of me for two
+days of screenshots and I only saw it when I typed a number that did not exist
+and could not get out. **A fix applied to one screen is not a fix** — the next
+screen with the same shape has to be looked for deliberately.
+
+**Fixed** with the same transparent AppBar and back button, so the layout below
+is unchanged.
+
+---
+
 ### O-40. ~~Push registration lost a race with itself, silently~~ ✅ fixed 2026-08-28
 
 Found by building a **debug APK** and reading the app's own log through a

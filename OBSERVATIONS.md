@@ -20,7 +20,7 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
-### O-37. Sessions are ending far sooner than the tokens say they should
+### O-37. ~~Sessions ending far sooner than the tokens say they should~~ ✅ found and fixed 2026-08-27
 
 **2026-08-27, during the screenshot pass.** The signed-in emulator kept
 returning to the login screen — repeatedly, across a couple of hours.
@@ -48,6 +48,39 @@ no 401 in the log at all. What would settle it: log every refresh with its
 outcome, then reproduce with two launches a second apart.
 
 **Size:** an hour to instrument, unknown to fix.
+
+---
+
+**Found. The refresh token rotates, and two refreshes at once kill the
+session.** Established against the live server rather than reasoned about:
+
+```
+refresh #1                      -> 200, returns a NEW ntkn
+refresh #2 with the SAME ntkn   -> 401
+refresh #3 with the ROTATED one -> 200
+```
+
+So the old token dies the instant a new one is issued. Two callers refreshing
+concurrently means the second presents a token that no longer exists, gets a
+401, and `rejected` means **clear the session** — the user is thrown to a login
+screen having done nothing wrong.
+
+⚠️ **The race was always there** — the launch check and any in-flight request
+could both refresh — but it was rare. **[O-36](#o-36)'s fix made it likely**: as
+soon as a 401 triggers a refresh, a screen opening fires several calls that all
+get 401 together, and each one starts its own refresh. One wins, the rest end
+the session. I made this worse before I made it better, and it is worth saying
+so plainly.
+
+**Fixed with a single-flight gate**: while a refresh is running, everyone who
+asks gets that same future and only one call reaches the network.
+`test/refresh_single_flight_test.dart` holds the shape, including that the gate
+**clears** afterwards — a stuck future would mean the session could never be
+refreshed again, which is a worse failure than the one being fixed.
+
+⚠️ **The rotation itself is good design and stays.** A refresh token that
+survives its own use is a token worth stealing. The bug was never the rotation;
+it was assuming only one thing would ever ask.
 
 ---
 

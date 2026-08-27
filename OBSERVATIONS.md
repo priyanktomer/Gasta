@@ -942,3 +942,25 @@ them rather than making them. **A database drop loses the catalog**, and the
 only route back is a restore. That was true under Flyway too — V1 is
 schema-only — so nothing regressed, but it is now the single most valuable
 un-versioned thing in the system.
+
+**What turning Flyway off silently dropped**, found the same day by running the
+integration suite against a database built from nothing:
+
+- **The `system-migration` audit actor**, the single INSERT in V1.
+  `profession.UPDATED_BY` and `location_state.UPDATED_BY` are NOT NULL foreign
+  keys onto it, so the first reference write on a fresh database fails.
+- **Nine column defaults** declared in SQL and not on the entity. Hibernate
+  created them NOT NULL with no default, and every raw INSERT that omitted one
+  died with 1364 *"doesn't have a default value"*. JPA never hits this because
+  it writes every column — which is exactly why nobody noticed.
+
+⚠️ **Neither was visible on the live database**, which already had all of it
+from the Flyway era. The divergence only exists between production and any
+database built after the switch — the quietest possible failure, and the reason
+`SchemaBuiltFromEntitiesTest` builds an untouched schema rather than reusing the
+suite's.
+
+⚠️ Declared against the live schema rather than from memory. `location_country
+.IS_ENABLED` really is `tinyint(1) DEFAULT 0` and not a BIT like every other
+flag, and guessing would have produced a fresh database that differed from
+production in a way nothing would report.

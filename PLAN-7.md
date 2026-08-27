@@ -160,11 +160,13 @@ O-23 problem: a profession has no stable code, only a display name.
 
 Two things would finish it:
 
-1. **A `CODE` column on `profession`.** Then note options, headcount flags and
-   service variants all attach to something that does not change when a display
-   name is edited. ⚠️ This is the single root cause behind O-23 and behind
-   every `LIKE '%...%'` in the seeder — worth doing once rather than working
-   around a fourth time.
+1. ~~**A `CODE` column on `profession`.**~~ ✅ **done 2026-08-27.** Every
+   `LIKE '%...%'` and `name.contains(...)` is gone; notes, headcount flags and
+   service variants all key on the code. Existing rows were backfilled by name
+   once — the last name match in the codebase — and 18 professions now carry a
+   handle that renaming cannot break. ⚠️ A profession with no code gets the
+   generic chips and nothing trade-specific, which is honest rather than
+   guessed.
 2. **An admin screen for the chips.** The table is configurable now and nothing
    exposes it, so changing a word still means a developer. `AdminController`
    already has the pattern — `add-professions`, `enable-state`.
@@ -308,7 +310,7 @@ holding every row of real data, and no error anywhere.
 
 ---
 
-### C-2. Extend the from-nothing test to cover the catalog
+### C-2. ~~Extend the from-nothing test to cover the catalog~~ ✅ done 2026-08-27
 
 `SchemaBuiltFromEntitiesTest` builds an untouched schema and asserts the tables,
 the seed rows and the column defaults arrive. It does **not** call
@@ -324,6 +326,10 @@ professions and 4 headcount professions.
 failures produced a non-empty catalog that was quietly missing something.
 
 **Size:** an hour, and it is the highest-value hour in this section.
+
+**Done.** `theCatalogRebuildsItself` signs up the setup account on the class's
+own empty schema and pins all six counts. Verified by breaking it — removing the
+doorstep flag from Water Supply turns it red.
 
 ---
 

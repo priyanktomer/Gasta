@@ -130,6 +130,54 @@ Roughly a dozen; more than twenty and the screen becomes a form.
 
 ---
 
+### B-1b. L-4's chip catalog — who curates it, now that it is data
+
+**⚠️ This section was missing from the first draft of PLAN-7 and the product
+owner caught it.** L-4 was marked done when only a third of it was.
+
+**What is now finished** (2026-08-27, live and verified):
+
+- The ticked chips are **stored as codes** on `task_note`, not folded into the
+  description. They used to be joined into prose at posting time, which threw
+  the codes away, froze the language at whatever the organiser was using, and
+  made them impossible to draw as chips or to count.
+- The **words come from the database** — `LABEL_EN` and `LABEL_HI` on
+  `profession_note_option`, seeded once and never overwritten, so an edit on
+  the server survives a deploy. The app falls back to its own ARB string when a
+  label is missing rather than showing the other language.
+- **Sub-profession granularity exists.** An option row can name one; the app
+  narrows the list as the organiser ticks, with no extra call.
+- The earner sees them **as chips above the description**, in their own
+  language.
+
+**What is left, and it is a curation job rather than a coding one.**
+
+The eight codes are still the eight that were guessed at when the feature was
+built, and which profession gets which is decided in `ReferenceDataSeeder` by
+**matching name fragments** — `'%mistri%'`, `'%harvest%'`. That works and it
+breaks the day somebody renames a profession in the admin screen. It is the same
+O-23 problem: a profession has no stable code, only a display name.
+
+Two things would finish it:
+
+1. **A `CODE` column on `profession`.** Then note options, headcount flags and
+   service variants all attach to something that does not change when a display
+   name is edited. ⚠️ This is the single root cause behind O-23 and behind
+   every `LIKE '%...%'` in the seeder — worth doing once rather than working
+   around a fourth time.
+2. **An admin screen for the chips.** The table is configurable now and nothing
+   exposes it, so changing a word still means a developer. `AdminController`
+   already has the pattern — `add-professions`, `enable-state`.
+
+**The part that needs you:** whether eight is the right set. Sub-profession
+rows make things like "the roof, not the walls" or "cows, not the field"
+possible, and nobody has decided whether that is useful or clutter.
+
+**Size:** the profession code column is a day. The admin screen is two. The
+list itself is a conversation.
+
+---
+
 ### B-2. L-3, road distance instead of straight line
 
 The distance filter measures a **straight line**. The label now says so —

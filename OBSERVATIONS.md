@@ -20,6 +20,44 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-32. ~~Step 3's chips were never actually stored~~ ✅ fixed 2026-08-27
+
+Found by the product owner asking the right question: *"step 3 checkboxes are
+more imp than description, so i hope values of those being store and shown."*
+
+They were not. `new_task_page.dart` joined the ticked **labels** with newlines
+and posted the result as `description`. There was no notes column on `task` at
+all.
+
+⚠️ **The language froze at posting time.** An organiser posting in Hindi
+produced Hindi sentences that an English-reading earner saw in Hindi — in an app
+whose entire localisation design is code-plus-label, and in the one place that
+had quietly opted out of it.
+
+⚠️ **And they could not be drawn as chips**, only as prose, so the thing an
+earner most needs at a glance — a dog, stairs, bring your own tools — was buried
+in a paragraph. Nothing could be counted either: "how many jobs involve heavy
+lifting" was unanswerable.
+
+**Also wrong, and also his:** he had asked for the chip **strings** to come from
+the database, and I had shipped codes-only with the labels in the app's ARB
+files — documenting the decision carefully, which made it look considered rather
+than contrary to what was asked. Adding or rewording a chip needed an app
+release. And sub-profession granularity, which he asked for in the same
+sentence, I skipped outright and recorded as "left out".
+
+⚠️ **None of it was carried into PLAN-7 either**, so it would have been lost
+rather than deferred. That is the worse half of this entry: a thing left undone
+and written down is a decision, and a thing left undone and not written down is
+just a thing left undone.
+
+**Fixed:** codes on `task_note`, `LABEL_EN`/`LABEL_HI` on the option rows,
+sub-profession narrowing in the app, chips above the description on the job.
+What is still open — a stable profession code, and an admin screen for the
+words — is [PLAN-7 §B-1b](PLAN-7.md).
+
+---
+
 ### O-31. Wiping the database is what proved the rebuild works — and it did not, three times over
 
 **2026-08-27.** The product owner asked for a complete wipe and said the catalog

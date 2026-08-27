@@ -20,6 +20,39 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-36. ~~The Dashboard could never refresh~~ ✅ fixed 2026-08-27
+
+Seen on the screenshot pass: the Dashboard showed *"Showing saved information
+from 50 min ago"*. Tapping **Retry** produced "51 min ago", then "52". It was
+not refreshing and never would.
+
+`ApiService.httpRequest` refreshes an expired token and retries — **on 412
+only**. That is what access-app signals on most endpoints, and the retry path
+was written for it.
+
+⚠️ **`get-dashboard` answers 401.** So it fell straight past the refresh, out
+through the ordinary error path, and the screen fell back to its cached copy.
+Every subsequent Retry did exactly the same thing.
+
+⚠️ **The cache fallback is what made it invisible.** It is a good feature —
+§6.2, a failed fetch shows the last good list rather than an error screen — and
+here it meant a screen that could not load looked like a screen that had loaded
+a while ago. The user is told the data is old and given a button that cannot
+help.
+
+**Fixed:** a 401 on an authenticated call now takes the same path as a 412 —
+refresh once, retry once. The `retry > 1` guard already at the top of the method
+is what stops a loop, and it covers both. The refresh endpoint itself is
+excluded, because a 401 from *it* is the one case where refreshing again is
+exactly wrong.
+
+⚠️ **Worth checking which other endpoints answer 401 rather than 412.** The
+inconsistency is in the library, so this fix covers the symptom everywhere but
+does not remove the cause. Any screen that quietly prefers its cache is now the
+thing to look at.
+
+---
+
 ### O-35. ~~Being logged out mid-session, with nothing in the log to explain it~~ ✅ fixed 2026-08-27
 
 Seen during the screenshot pass: a signed-in device came back to the login

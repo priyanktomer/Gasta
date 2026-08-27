@@ -146,8 +146,35 @@ refresh and every 401 with the token's `jti`, then watch one session die. A
 release build strips `debugPrint`, so this needs either a debug build on a
 device or a temporary logger that survives release.
 
-**Do not treat this entry as closed.** The single-flight fix is real and
-verified; it is one of at least two mechanisms.
+**The second mechanism, found 2026-08-28: the background poll could end the
+session.**
+
+`NotificationPoll` runs on WorkManager every fifteen minutes, in **its own
+isolate**, and makes an authenticated call for the unread count. Two things
+followed from that once a 401 started triggering a refresh:
+
+- The poll could refresh. A refresh that loses the rotation race is `rejected`,
+  and `rejected` clears the tokens — **from a phone in a pocket, for a badge
+  number**, with nobody there to see the login screen it navigates to.
+- ⚠️ **The single-flight gate is a static field, so it does not span
+  isolates.** Two isolates refreshing at once is precisely the race it was
+  written to stop, and it cannot see across that boundary.
+
+This also explains the shape of the symptom: sessions dying during *idle*, on a
+fifteen-minute rhythm, rather than during use.
+
+⚠️ **Both halves of this were made possible by [O-36](#o-36)'s fix.** Before it,
+a 401 in the poll failed quietly. That is twice in one day that a correct fix
+opened a worse hole — worth remembering as the cost of touching a shared path.
+
+**Fixed:** `httpRequest` takes `background: true`, which never refreshes and
+never navigates. A background call whose token is stale simply fails; the next
+time somebody opens the app it refreshes properly, with a user there.
+
+**What is still not proven** is that these two were the *only* mechanisms. The
+four-minute rejection above has not been reproduced since, and it may have been
+this one all along — a poll firing between the sign-in and the next launch fits
+it. Left open until a session survives a day.
 
 ---
 

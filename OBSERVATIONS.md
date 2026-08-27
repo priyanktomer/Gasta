@@ -20,6 +20,56 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-37. Sessions are ending far sooner than the tokens say they should
+
+**2026-08-27, during the screenshot pass.** The signed-in emulator kept
+returning to the login screen — repeatedly, across a couple of hours.
+
+Two of the causes were found and fixed ([O-35](#o-35), [O-36](#o-36)). What is
+left does not fit the numbers. Reading the JWT claims directly:
+
+- access token — **30 minutes**
+- refresh token — **10080 minutes, seven days**
+
+So a session should survive a week of ordinary use, and these were dying in
+tens of minutes.
+
+⚠️ **The most likely remaining explanation is refresh-token rotation plus a
+race.** Each refresh issues a new pair; if two launches refresh at once — which
+is exactly what repeated install-and-launch does — the second presents a token
+the first has already replaced, gets a rejection, and clears the session.
+
+That would matter to a real user too: an app killed by the battery manager and
+relaunched twice in quick succession is not an unusual thing on these handsets.
+
+⚠️ **Not confirmed, deliberately recorded as unconfirmed.** Two theories were
+already wrong today — the first was "the server is rejecting us", and there was
+no 401 in the log at all. What would settle it: log every refresh with its
+outcome, then reproduce with two launches a second apart.
+
+**Size:** an hour to instrument, unknown to fix.
+
+---
+
+### O-38. "Early Morning Slot" is app-speak on a screen for people who do not read much
+
+**2026-08-27.** Step 2 of Post a Job offers **"Early Morning Slot"**, **"Late
+Morning Slot"**, **"Afternoon Slot"**, **"Evening Slot"**.
+
+The word "Slot" is ours, not theirs. Nobody arranging a maid says *"book the
+early morning slot"* — they say *subah jaldi*. It is the internal enum name
+(`Slot.E_1`) leaking onto a screen, and it lengthens every label on a list where
+the label is the whole content.
+
+⚠️ Worth checking the Hindi at the same time. If it reads "स्लॉट", that is an
+English word transliterated for an audience that has no reason to know it.
+
+**Size:** four strings in each language. The only question is what to call them
+— "Early morning" alone probably does it, since the heading already says
+"Times".
+
+---
+
 ### O-36. ~~The Dashboard could never refresh~~ ✅ fixed 2026-08-27
 
 Seen on the screenshot pass: the Dashboard showed *"Showing saved information

@@ -137,12 +137,35 @@ Thirteen entries, six resolved. The open ones worth pulling forward:
   on Android 13+.
 - **O-13** — `google_maps_flutter` is dead weight; the only map is commented out.
 
-### B-2. The Hindi audit nobody has done
+### B-2. ~~The Hindi audit nobody has done~~ ✅ done 2026-08-27 — and it passes
 
-Seven screens were translated because somebody happened to be working on them.
-**No one has walked the whole app in Hindi with fresh eyes.** That is the single
-highest-value thing the next round of feedback can produce, and it needs a
-person using the app, not a grep.
+**The mechanical half is done and clean.** `tool/check_l10n.py` compares the
+two ARB files and passes:
+
+```
+754 keys checked
+English and Hindi agree.
+```
+
+It checks three things, none of which break the build when they are wrong:
+
+1. **A key in English and not in Hindi.** Flutter falls back to English
+   silently, so a Hindi speaker gets one English sentence mid-screen.
+2. **A value copied across untranslated** — same symptom, and it survives a
+   key-count check, which is why counting keys is not enough. Detected by
+   looking for Devanagari in the Hindi value.
+3. **A dropped placeholder.** `"{count} people"` without its `{count}` throws
+   at runtime, on one screen, in the language nobody on the team reads.
+
+Two English values in the Hindi file are allowed and listed in the script:
+`appName` ("Gasta" is a name) and `languageEnglish` — "English" must read as
+English in the picker or somebody who cannot read Hindi cannot find their way
+back.
+
+⚠️ **The half a script cannot do is still open.** Nobody has walked the whole
+app in Hindi with fresh eyes, and no parity check catches a translation that is
+present, grammatical and *wrong for the context* — which is the failure this
+audience would actually hit.
 
 The recurring trap, twice now: **text that is composed cannot be translated.**
 The posting wizard compared against the English words *on screen* to decide
@@ -177,11 +200,32 @@ screens produces two traces and would look like two problems.
 ⚠️ A log line is a weak channel — it reaches somebody only if they go and look.
 It is also the only channel this server has. See B-4.
 
-### B-4. No monitoring
+### B-4. Monitoring ◐ started 2026-08-27
 
-`docker compose logs` is the whole story. The health endpoint exists and is
-honest — it does a real round trip to MySQL — but nothing watches it. A cron
-that curls it and shouts would be a start and is nearly free.
+`docker compose logs` was the whole story: the health endpoint does a real
+round trip to MySQL and nothing looked at it, so a server that died at 2am
+stayed dead until somebody opened the app.
+
+`deploy/health-watch.sh` runs every five minutes from cron on the box and
+writes to `/var/log/gasta-health.log`. Installed and probed.
+
+Two decisions in it worth keeping:
+
+- **Two consecutive failures before it says anything.** A single timeout is a
+  dropped packet, a certificate renewal, or the API restarting after a deploy.
+  Shouting about each of those is how somebody learns to ignore the file — and
+  then it has stopped working for the case it exists for.
+- **It logs recovery too.** Without that the log shows a server going down and
+  never coming back, which is a worse story than the truth.
+
+⚠️ **This is not monitoring, and the gap is the point.** It reaches a person
+only if they read the file, and it cannot report the failure that matters most
+— the whole host being gone, cron included.
+
+**The thing actually worth doing next is an external pinger** (UptimeRobot's
+free tier, Healthchecks.io) that emails when the ping *stops*. It is better
+precisely because it does not run on the machine it is watching. Ten minutes
+and an account.
 
 ---
 
@@ -1034,7 +1078,7 @@ that conversation will say more than this paragraph can.
 
 ---
 
-### L-9. Dummy data for testing on a real phone
+### L-9. ~~Dummy data for testing on a real phone~~ ✅ done 2026-08-26
 
 > *"Since m testing on phone can u plz add some dummy data for all screens?"*
 
@@ -1058,7 +1102,7 @@ than asked, with the reasoning.
 
 ---
 
-### M-1. The Dashboard should follow the mode the user chose
+### M-1. ~~The Dashboard should follow the mode the user chose~~ ✅ done 2026-08-27
 
 > *"When i use gasta just as earner, only work i do should show in dashboard and
 > vice versa for organiser only view."*
@@ -1096,7 +1140,7 @@ no extra call.
 
 ---
 
-### M-2. Hide Home for earners, and Earning Zone for organisers
+### M-2. ~~Hide Earning Zone for organisers~~ ✅ done 2026-08-27 (Home deliberately kept)
 
 > *"Home tab can be hidden for earner and eanring zone tab can be hiddden for
 > organiser only view."*
@@ -1233,7 +1277,7 @@ it on a device rather than by reasoning:
 
 ---
 
-### M-5. Tapping a notification should open the thing it is about
+### M-5. ~~Tapping a notification should open the thing it is about~~ ✅ done 2026-08-27
 
 > *"Tapping on a notification tile in notification just marks that as read but
 > it should take me to respective screen i think?"*

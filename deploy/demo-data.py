@@ -465,7 +465,13 @@ def teardown():
         if not api.sign_in(phone, name, email):
             print(" - %s: not there" % phone)
             continue
-        status, body, _ = api.call("POST", "/authenticated/delete-my-account", {})
+        # ⚠️ `confirmPhrase` is a @RequestParam, not a body field, and the
+        # server wants the literal word DELETE. Sending an empty body made
+        # every teardown print "Missing required value: confirmPhrase" and
+        # delete nothing — a cleanup that reported success while doing
+        # nothing at all.
+        status, body, _ = api.call(
+            "POST", "/authenticated/delete-my-account?confirmPhrase=DELETE", {})
         print(" - %s: %s" % (phone, "deleted" if status == 200 else body.get("message")))
     print()
     print("!! Account deletion honours the 180-day retention window rather than")

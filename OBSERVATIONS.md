@@ -862,3 +862,83 @@ one second to catch against a real MySQL 8.
 It logged `DOWN http=502` to `/var/log/gasta-health.log` exactly as designed.
 That is the gap §B-4 names in its own footer: it reaches a person only if a
 person reads the file.
+
+---
+
+### O-25. 🔴 "Delete my account" had never worked for anyone who posted a job
+
+**2026-08-27, found while re-seeding demo data.** Five demo accounts, five
+failures, identical message: *"Something went wrong. Please try again."*
+
+`ComplianceServiceImpl.deleteMyAccount` hard-deleted the user's addresses:
+
+```java
+appUserAddressRepo.deleteByUser_Id(id);
+```
+
+`task.ADDRESS_ID` is a foreign key onto `app_user_address`. So for **anybody who
+had ever posted a job** the delete threw a constraint violation — and because
+the method is one `@Transactional` unit, the violation rolled back *every other
+deletion in it*. The user asked to be erased, saw an error, and kept the account
+intact.
+
+⚠️ **This is the DPDP Act deletion path.** Not a convenience feature: the
+legally required one, and the one §A-1's privacy policy will promise.
+
+⚠️ **It reported the failure honestly and nobody was listening.** The catch
+block logs `Could not delete account` at ERROR with the stack trace. It has been
+doing that for as long as the feature has existed. §B-4's watcher checks whether
+the API answers, not whether it answers *correctly* — a 500 on one endpoint is
+invisible to it.
+
+**The fix** follows the rule the same method already states for work and money
+records: an address attached to a task **is not this person's record alone** —
+it is where somebody else went to work, and the earner keeps that history. So it
+is scrubbed rather than deleted. Coordinates are zeroed rather than nulled
+because both columns are `NOT NULL`, which has the useful side effect that a
+task from a deleted account falls outside every distance filter.
+
+**What this says about the rest of the deletion path.** The same pattern —
+`deleteByUser_Id` on a table something else references — is used four more times
+in that method for preferences, notifications, connections and household
+members. None of them threw today, because no demo account had rows in the
+tables that reference them. That is luck, not proof.
+
+⚠️ **Worth an explicit test**, and it is the one test in the codebase most worth
+writing: create a user, give them a job, a quote, a notification, a household
+and a connection, then delete the account and assert it succeeds. It would have
+caught this on the day it was written.
+
+---
+
+### O-26. The schema went back to Hibernate, and what that costs
+
+**2026-08-27.** After O-24, `ddl-auto=update` in both profiles and
+`spring.flyway.enabled=false`. Recorded here because a future reader will find
+twenty-two migrations in the tree and reasonably assume they run.
+
+The instruction was explicit — *"any schema change shouldn't be done through sql
+unless i say so only through spring boot"* — and it is a reasonable answer to
+what happened: for a solo developer shipping daily, one hand-written SQL file
+per column is a per-change tax that bought an outage.
+
+⚠️ **What is genuinely lost**, so it is not discovered the hard way:
+
+- **Renames and drops.** `update` only adds. A renamed field leaves the old
+  column populated and nothing moves the data.
+- **Reviewable schema history.** The change is now a diff on an entity rather
+  than a file whose whole purpose is the change.
+- **The order guarantee.** Flyway applies changes in a fixed sequence across
+  every environment. Hibernate applies whatever the entities currently say,
+  which is the same thing right up until two databases have diverged.
+
+Data seeding moved to `ReferenceDataSeeder` — idempotent, guarded by a read,
+never fatal. That is the sanctioned way to put rows in a table now.
+
+⚠️ **The profession catalog is still not owned by anything.** 52 professions and
+104 sub-professions exist only in the database and in
+`/opt/gasta/backups/*.sql.gz`. No code creates them, and `demo-data.py` reads
+them rather than making them. **A database drop loses the catalog**, and the
+only route back is a restore. That was true under Flyway too — V1 is
+schema-only — so nothing regressed, but it is now the single most valuable
+un-versioned thing in the system.

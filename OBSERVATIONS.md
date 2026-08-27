@@ -305,7 +305,7 @@ one-line check in the build command would do it, and belongs with CI (§C-1).
 
 ---
 
-### O-24. Long profession names break mid-word on the tiles
+### O-24. ~~Long profession names break mid-word on the tiles~~ ✅ fixed 2026-08-27
 
 "Construction Laborer" renders as **"Constructio / n Laborer"** on the Post New
 Task grid — Flutter breaks inside the word when a line will not fit, rather than
@@ -324,6 +324,15 @@ one is probably right for "Construction Laborer" — "Labourer" alone would do,
 since the category heading already says Construction.
 
 **Size:** minutes, once somebody picks.
+
+**Fixed 2026-08-27 — and none of the three options above was the right one.**
+All of them are a size somebody has to re-pick every time a name is added.
+
+`FittedBox(fit: BoxFit.scaleDown)` on the three grid labels shrinks a label
+only when it does not fit, never scales it up, and holds for Hindi — where
+compound profession names are longer still. Renaming "Construction Laborer" in
+the catalog would have fixed one tile and left the next one to be discovered by
+a user.
 
 ---
 
@@ -697,7 +706,7 @@ it. If nothing appears, `sudo docker logs gasta-api-1 | grep -i fcm` says why �
 
 ---
 
-### O-14. A test account sits on the production database
+### O-14. ~~A test account sits on the production database~~ ✅ gone 2026-08-27
 
 `9000000001` / "PushTest" / `gastapushtest@gmail.com`, created on 2026-08-26 to
 verify push registration end to end, because there was no other way to obtain a
@@ -708,6 +717,10 @@ somebody wonders about. Deleting it also exercises the account-deletion path,
 which is not a bad thing to have run once.
 
 **Size:** one delete, whenever.
+
+**Gone 2026-08-27**, along with everything else — the database was wiped and
+rebuilt from code. It now holds `system-migration`, the setup account and the
+five demo accounts, and nothing else.
 
 ---
 
@@ -820,7 +833,7 @@ by the old Flutter and nothing here changed it; that belongs with §I and a Mac.
 
 ---
 
-### O-1. Sign-up rejects every email except Gmail and Outlook
+### O-1. ◐ Sign-up rejects every email except Gmail and Outlook — ✅ message fixed 2026-08-27, policy stands
 
 **Answered 2026-08-26 — deliberate, and staying.** Those are what ordinary
 people use; the long tail of other providers is where scam signups come from. So
@@ -847,6 +860,18 @@ providers are trusted to deliver, that reasoning disappears the moment email
 stops being used for anything (nothing is sent to it today — OTP is SMS).
 
 **Size:** the check is one condition. The decision is the work.
+
+**Message fixed 2026-08-27; the policy stays**, as decided. It now reads *"We
+only accept Gmail or Outlook addresses at the moment — those are the ones we can
+verify. Your address is fine, it is our rule."*
+
+⚠️ I hit this myself the same day: setting up the wiped database needed the
+account `8191910695` to sign up, and `setup@example.com` was rejected with what
+read like a malformed-address error. The message being wrong is not theoretical.
+
+The underlying question in this entry is still open and still worth an answer:
+**nothing is sent to the email address today**, so a rule justified by
+deliverability is guarding a field nobody uses. Carried to PLAN-7.
 
 ---
 
@@ -1028,7 +1053,7 @@ still holds.
 
 ---
 
-### O-9. A stale build artifact sits in `target/`
+### O-9. ~~A stale build artifact sits in `target/`~~ ✅ fixed 2026-08-27 — and it bit first
 
 `gasta-api-0.1.0-SNAPSHOT.jar`, dated 2026-07-19, beside the current
 `Yapan-0.0.1-SNAPSHOT.jar`. Harmless — `Dockerfile` names the jar explicitly —
@@ -1036,4 +1061,13 @@ but a `target/` with two fat jars in it is a directory where somebody eventually
 ships the wrong one.
 
 **Size:** `mvn clean` once.
+
+**Fixed 2026-08-27, and it was not cosmetic.** The full suite failed with 18
+errors — `NoClassDefFoundError: ScheduleExpansionServiceImpl$1`, an anonymous
+inner class that a stale `target/` no longer held. Nothing was wrong with the
+code: `mvn clean test` passes 84 tests. ⚠️ **That is the real cost of stale
+build output** — it produces failures that look like defects in files nobody
+touched, and the reflex is to go looking for the bug rather than to clean.
+
+CI is unaffected: a fresh runner has no `target/` to be stale.
 

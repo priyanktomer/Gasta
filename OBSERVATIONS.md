@@ -20,6 +20,56 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-33. The two Home tiles are drawn in two different visual languages
+
+**2026-08-27, seen during the screenshot pass.** "Doorstep Services" carries a
+colour emoji (a door and a plant), like every profession tile below it.
+"Reserve or Schedule" carries a **monochrome outline SVG** — a flat grey shape
+that, sitting beside colour artwork, reads as an icon that failed to load
+rather than as a deliberate choice.
+
+They are the **first two things on the first screen**, side by side and the same
+size, which is exactly where a mismatch is most visible.
+
+⚠️ **This is data, not code.** Both come from `get-home-screen-menu`; the icon
+is a base64 SVG stored on the row. Nothing in the app decides it, so nothing in
+the app can fix it — it is a matter of replacing the stored artwork, and which
+artwork is a product decision rather than a developer's.
+
+**Two ways to settle it**, and either is fine as long as it is *one* of them:
+
+- Give RESERVE a colour emoji, matching everything else on the screen.
+- Or give every tile a monochrome icon, which is the more restrained look and
+  a much larger change.
+
+**Size:** minutes, once somebody picks the artwork.
+
+---
+
+### O-34. ~~The consent screen looks like it cuts a card in half~~ — looked at, and it is not a bug
+
+**2026-08-27.** On first sight the "We do not sell your data" card is sliced
+across the middle by the button bar, mid-sentence, which reads as a layout
+fault on a screen where completeness matters legally.
+
+**Scrolled it, and the whole thing is there.** The card, "The full text"
+heading, Terms of Use and Privacy Notice all appear, and the buttons stay
+fixed. The scroll view ends where the bar begins, so nothing is hidden *behind*
+anything — it is ordinary scrolling, and the cut is just where the fold happens
+to land.
+
+⚠️ Written down rather than fixed, deliberately. The one thing that could be
+said against it is that there is **no affordance saying it scrolls** — no
+indicator, and the fold lands mid-sentence. If a user ever reports not finding
+the documents, this is the entry to reopen; changing it now would be fixing an
+appearance rather than a fault.
+
+**Worth keeping as an example** of a thing that looked wrong in a screenshot and
+was right in the app. It was checked before being touched, which is the whole
+point of doing this with screenshots.
+
+---
+
 ### O-32. ~~Step 3's chips were never actually stored~~ ✅ fixed 2026-08-27
 
 Found by the product owner asking the right question: *"step 3 checkboxes are

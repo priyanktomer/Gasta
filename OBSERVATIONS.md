@@ -20,6 +20,36 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-40. ~~Push registration lost a race with itself, silently~~ ✅ fixed 2026-08-28
+
+Found by building a **debug APK** and reading the app's own log through a
+sign-in — after two days of guessing at session behaviour from the outside. The
+line was there in one run:
+
+```
+Could not register for push: [firebase_messaging/unknown]
+A request for permissions is already running, please wait for it to finish
+```
+
+`registerWithBackend` is fired **unawaited from two places** — `StartupWrapper`
+on every launch, and `evaluateResponse` straight after a sign-in. On a fresh
+login they overlap, both call `requestPermission()`, and the second throws.
+
+⚠️ **The loser does not register, and says nothing.** No device token reaches
+the server, so **push never arrives for that install** — and the in-app
+notification list still fills, so everything looks fine. This is the most
+likely reason [O-15](#o-15) has never been able to confirm a push arriving.
+
+**Fixed** with the same single-flight gate used for the token refresh: whoever
+asks second joins the first rather than starting again.
+
+⚠️ **Third instance today of the same shape** — two callers, one shared
+resource, no coordination: the token refresh ([O-37](#o-37)), the background
+poll, and now this. Worth treating as a pattern rather than three coincidences
+when the next `unawaited(...)` is written.
+
+---
+
 ### O-39. The consent screen came up in Hindi while the rest of the app was English
 
 **2026-08-27, seen on the screenshot pass.** Signing in as a new account, the
@@ -285,6 +315,13 @@ size, which is exactly where a mismatch is most visible.
 is a base64 SVG stored on the row. Nothing in the app decides it, so nothing in
 the app can fix it — it is a matter of replacing the stored artwork, and which
 artwork is a product decision rather than a developer's.
+
+**⚠️ Update 2026-08-28 — it may not be the artwork at all.** The debug log
+carries `unhandled element <style/>; Picture key: Svg loader` on the screen that
+draws these. The SVG's styling is inside a `<style>` block, `flutter_svg` drops
+it, and what is left renders as a flat grey shape. If that is the cause, the
+file is fine and the fix is to inline the fills as presentation attributes
+rather than to redraw anything.
 
 **Two ways to settle it**, and either is fine as long as it is *one* of them:
 

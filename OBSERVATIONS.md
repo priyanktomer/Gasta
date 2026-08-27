@@ -20,6 +20,46 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-35. ~~Being logged out mid-session, with nothing in the log to explain it~~ ✅ fixed 2026-08-27
+
+Seen during the screenshot pass: a signed-in device came back to the login
+screen, and the access log showed **no 401 at all** — so the server had not
+rejected anything. The app had decided it locally.
+
+What it decided on was a **500 from `/common/secure/refresh-token`**.
+
+`LoginServiceImpl.refreshToken` already translated "invalid session" and
+"session expired" into 401. It missed `Token malformed.` — what access-app says
+about a refresh token it cannot parse, which includes one from a session that
+has since been replaced by a sign-in somewhere else.
+
+⚠️ **And the first fix changed nothing**, which is the part worth remembering.
+The existing translation lived in the `catch` block, because access-app *throws*
+for an expired session. For a malformed one it **returns** a 500 response
+instead — so the catch never ran. The library is inconsistent about which it
+does, and any code reading its messages has to ask on both paths.
+
+⚠️ **Why a status code was worth this much trouble.** The app maps a rejected
+refresh to *clear the session*, and getting back in needs an OTP. So the
+difference between 401 and 500 here is the difference between a session ending
+when it should and a session ending because a message was worded unexpectedly.
+
+**Fixed on both sides**, deliberately:
+
+- The server answers 401 for a token that is expired, replaced, truncated or
+  wrongly signed — and **still 500 for anything it does not recognise**,
+  because a real fault reported as "your session ended" is the mirror-image
+  mistake and hides breakage.
+- The app treats any 5xx from refresh as *unreachable* rather than *rejected*.
+  `rejected` costs the user their session; a server fault must never spend
+  that. This is the guard that makes the next unrecognised library message
+  harmless.
+
+**Verified on staging before production** — the first thing staging was used
+for, on the day it was built.
+
+---
+
 ### O-33. The two Home tiles are drawn in two different visual languages
 
 **2026-08-27, seen during the screenshot pass.** "Doorstep Services" carries a

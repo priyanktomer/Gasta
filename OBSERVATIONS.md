@@ -20,7 +20,7 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
-### O-28. 🔴 A one-word MySQL incompatibility took the live API down
+### O-28. ~~🔴 A one-word MySQL incompatibility took the live API down~~ ✅ resolved 2026-08-27
 
 **2026-08-27, during §L-1.** `V22__profession_asks_headcount.sql` was written as
 `ALTER TABLE profession ADD COLUMN IF NOT EXISTS ...`. **MySQL 8 has no
@@ -55,7 +55,7 @@ person reads the file.
 
 ---
 
-### O-29. 🔴 "Delete my account" had never worked for anyone who posted a job
+### O-29. ~~🔴 "Delete my account" had never worked for anyone who posted a job~~ ✅ fixed 2026-08-27
 
 **2026-08-27, found while re-seeding demo data.** Five demo accounts, five
 failures, identical message: *"Something went wrong. Please try again."*
@@ -193,7 +193,7 @@ local stack and pointed at production once.
 
 ---
 
-### O-26. "Any" on the distance filter means 25 km, not any
+### O-26. ◐ ~~"Any" on the distance filter does not say so~~ ✅ label fixed 2026-08-26; **is 25 km right** is still a product decision
 
 The Earning Zone's widest band is labelled **Any**. It is not: `DistanceBucket`
 tops out at `VERY_LONG` = 9-25 km, so selecting Any asks for 0-25 km and

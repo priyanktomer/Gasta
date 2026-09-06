@@ -36,6 +36,10 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 
+# ⚠️ **Overridable with `--base`, and that is not a convenience.** This tool
+# creates accounts and posts jobs; until staging existed there was nowhere else
+# to point it, so the only way to see a full app was to write demo rows into
+# production. Staging is a real second database now (O-50), so point it there.
 BASE = "https://yapan.duckdns.org/api/v1/yapan"
 
 # ⚠️ **Seed near where the phone actually is, with `--near LAT,LNG`.**
@@ -490,11 +494,17 @@ if __name__ == "__main__":
                         help="post N more jobs per person starting today, even "
                              "if they already have some; use this to give the "
                              "Today tab something to show")
+    parser.add_argument("--base", metavar="URL",
+                        help="the server to seed, e.g. "
+                             "https://staging.yapan.duckdns.org — defaults to "
+                             "production, which is rarely what you want")
     parser.add_argument("--city", default="Demo Nagar",
                         help="the town the demo addresses claim to be in; set "
                              "it to match --near or the cards will say one "
                              "place while the pin is in another")
     args = parser.parse_args()
+    if args.base:
+        BASE = args.base.rstrip("/") + "/api/v1/yapan"
     if args.teardown:
         teardown()
     else:

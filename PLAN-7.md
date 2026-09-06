@@ -209,6 +209,25 @@ volume for the first year this is a few hundred rupees a month.
 
 **Size:** a day, once a key exists and somebody accepts the bill.
 
+⚠️ **Self-hosted Valhalla was started on 2026-09-06 and withdrawn the same
+day.** It is the only option that is both free and unambiguous for a product
+with paying users — Google bills per request, and OpenRouteService's free tier
+is aimed at non-commercial use — but the work is not the container. It is:
+build tiles somewhere other than the server (hours of CPU, tens of gigabytes of
+scratch), ship them, and then serve them inside the ~2.75 GB this host has
+spare after prod's 6.5 GB and staging's 2.75 GB of 12 GB.
+
+The product owner cancelled it as too large for now, and everything for it was
+removed rather than left half-present: a service nobody calls and a compose
+entry nobody starts are worse than nothing, because the next person has to work
+out whether they are load-bearing.
+
+**If it is picked up again**, the two decisions that were already made and are
+worth not re-deriving: a **state extract**, not all of India — the product
+serves one area and a job outside the extract simply keeps the straight line —
+and a hard memory cap, because a routing engine that grows without bound takes
+production with it.
+
 ---
 
 ### B-3. ~~L-8, slots for farm and construction work~~ ✅ built 2026-09-06

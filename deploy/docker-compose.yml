@@ -186,73 +186,6 @@ services:
         done
     networks: [internal]
 
-  # Road distance, self-hosted (PLAN-7 §B-2).
-  #
-  # ⚠️ **Why not a hosted API.** The straight-line filter is dishonest in hill
-  # and river country — an 8 km line can be a 40-minute detour, and an earner
-  # who travels for that job does not come back. Google's Distance Matrix has
-  # the best India data and a per-request bill; OpenRouteService has a free
-  # tier whose terms are aimed at non-commercial use. Self-hosting is the only
-  # option that is free *and* unambiguous for a product with paying users.
-  #
-  # ⚠️ **Valhalla rather than OSRM, because of this box.** OSRM keeps its graph
-  # in RAM and wants many gigabytes for India. Valhalla memory-maps tiles from
-  # disk, so it serves in a few hundred megabytes and the cost moves to disk,
-  # which this host has more of than memory.
-  #
-  # ## Memory, and why this number
-  #
-  # Committed before this: prod api 3g + mysql 3g + redis 512m = 6.5g, staging
-  # 1500m + 1g + 256m = 2.75g. That is 9.25g of 12g, and Caddy and duckdns are
-  # uncapped on top. **1g is what is genuinely spare**, and the cap is the point:
-  # a routing engine that grows without bound would take production with it, and
-  # nothing about job search is worth that.
-  #
-  # ⚠️ **It is `profiles:`, so it does not start unless asked.** A container
-  # with no tiles answers every request with an error, and the API treats that
-  # as "no road distance" and falls back to the straight line — correct, but it
-  # would look like the feature is broken rather than not yet installed. Bring
-  # it up deliberately, after the tiles exist:
-  #
-  #     docker compose --profile routing up -d valhalla
-  #
-  # ## The tiles
-  #
-  # ⚠️ **Do not build them on this host.** Tile building is hours of CPU and
-  # tens of gigabytes of scratch for all of India, on the machine that is
-  # serving users. Build them somewhere else — a laptop, or a temporary large
-  # VM — and copy the finished directory into the `valhalla_tiles` volume.
-  #
-  # ⚠️ **A regional extract is almost certainly the right answer**, not all of
-  # India: the product serves one area today, and Uttar Pradesh alone is a
-  # fraction of the size and of the build. RUNBOOK has the commands.
-  valhalla:
-    image: ghcr.io/valhalla/valhalla:latest
-    restart: unless-stopped
-    profiles: [routing]
-    environment:
-      # No tile build inside the container — see above. It serves what it finds.
-      tile_urls: ""
-      build_tar: "False"
-      serve_tiles: "True"
-      use_tiles_ignore_pbf: "True"
-    volumes:
-      - valhalla_tiles:/custom_files
-    networks: [internal]
-    healthcheck:
-      # `status` is Valhalla's own readiness endpoint and needs no coordinates,
-      # so a healthy container means the tiles actually loaded rather than that
-      # the process started.
-      test: ["CMD", "wget", "-qO-", "http://localhost:8002/status"]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-
 networks:
   internal:
     driver: bridge
@@ -262,5 +195,3 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
-  # Built elsewhere and copied in — never built here. See the valhalla service.
-  valhalla_tiles:

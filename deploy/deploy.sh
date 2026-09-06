@@ -35,12 +35,19 @@ case "${2:-}" in
 	staging|prod) ENVIRONMENT="$2"; shift ;;
 esac
 
-TAG="${2:-$(git -C .. rev-parse --short HEAD 2>/dev/null || echo latest)}"
+# ⚠️ **The tag names the code, so it has to come from the code's repository.**
+# This read `git -C ..`, which from deploy/ is the *documents* repository — so
+# every image ever shipped was tagged with the SHA of whatever documentation was
+# last edited. During an incident the image tag is the only place "which build is
+# running" could be answered, and it was answering confidently and wrongly:
+# two different backends could carry the same tag (O-47).
+TAG="${2:-$(git -C "$(dirname "$0")/../JeevikaService" rev-parse --short HEAD 2>/dev/null || echo latest)}"
 
 if [[ "$ENVIRONMENT" == "staging" ]]; then
 	COMPOSE_FILE="docker-compose.staging.yml"
 	ENV_FILE=".env.staging"
-	API_CONTAINER="gasta-staging-api-1"
+	# Fixed by `container_name` in the staging compose file, so no `-1` suffix.
+	API_CONTAINER="gasta-staging-api"
 else
 	COMPOSE_FILE="docker-compose.yml"
 	ENV_FILE=".env"
@@ -134,6 +141,21 @@ ssh "${SSH_OPTS[@]}" "$TARGET" "cd $REMOTE_DIR \
 	&& rm -f gasta-api-$TAG.tar \
 	&& GASTA_TAG=$TAG docker compose --env-file $ENV_FILE -f $COMPOSE_FILE up -d --remove-orphans \
 	&& docker image prune -f"
+
+# ⚠️ **`up -d` does not restart Caddy when only the Caddyfile changed.** The
+# file is bind-mounted, so editing it does not change the container's config
+# hash and compose leaves it running with the old routes in memory. Every
+# Caddyfile change shipped so far reached the server and did nothing until
+# somebody restarted the container by hand — which is the kind of "deployed
+# successfully, nothing happened" that costs an afternoon. It cost one today.
+#
+# `caddy reload` rather than `restart`: graceful, keeps the certificates
+# loaded, drops no connection. Prod only — the Caddyfile belongs to the
+# production stack and staging has no proxy of its own.
+if [[ "$ENVIRONMENT" != "staging" ]]; then
+	echo "==> reloading caddy"
+	ssh "${SSH_OPTS[@]}" "$TARGET" "cd $REMOTE_DIR && docker compose --env-file .env exec -T caddy caddy reload --config /etc/caddy/Caddyfile"
+fi
 
 rm -f "$HERE/gasta-api-$TAG.tar"
 

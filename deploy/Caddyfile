@@ -82,7 +82,9 @@
 # and impossible to see in a screenshot; a hostname is visible in every log line
 # and in the certificate.
 {$GASTA_STAGING_DOMAIN:staging.invalid} {
-	reverse_proxy gasta-staging-api-1:8080 {
+	# ⚠️ By container name, not the service alias. `api` used to resolve to
+	# either stack's container on prod's network — see docker-compose.staging.yml.
+	reverse_proxy gasta-staging-api:8080 {
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}

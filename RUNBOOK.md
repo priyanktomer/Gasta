@@ -21,6 +21,19 @@ Staging and prod are **two stacks on one VM** — separate containers, separate
 databases, separate volumes, one Caddy in front. See [PLAN-7 §C-1](PLAN-7.md)
 for why it is not a second machine.
 
+⚠️ **They were not separate until 2026-09-06**, and nothing said so
+([O-50](OBSERVATIONS.md)). Both stacks named their services `api`, `mysql` and
+`redis`; staging's API is on prod's network so Caddy can reach it; Docker
+resolved those names to whichever container it liked. Prod's hostname was
+sometimes served by the staging container, and staging could write to prod's
+database.
+
+**Check it by writing through one hostname and reading through the other** —
+sign an unused number up on staging, then ask *prod* whether it knows that
+number. `SIGN_UP` means separate; `SIGN_IN` means staging is writing to
+production. ⚠️ Reading the value back through the same hostname proves nothing,
+which is how this went unnoticed for ten days.
+
 ---
 
 ## Pointing the app somewhere
@@ -161,6 +174,30 @@ the catalog, change them in the same commit.
 ⚠️ Use the email domain **gmail.com or outlook.com**. Sign-up rejects anything
 else ([O-1](OBSERVATIONS.md)) and `example.com` fails with a message that reads
 like the address is malformed.
+
+### Repairing a catalog rather than rebuilding it
+
+A database that is half-built — a first run that failed partway, a column added
+after the rows, a profession missing its `code` — is fixed by running the same
+setup again, signed in as `8191910695`:
+
+```bash
+curl -s -X POST https://staging.yapan.duckdns.org/api/v1/yapan/super-user/initial-setup \
+  -H "Authorization: $ACCESS_TOKEN" -H "atsh: $ACCESS_HASH"
+```
+
+Every seeder matches on its natural key and updates in place, so this is safe on
+a full database, an empty one and everything in between. It also enables India
+and gives it the `+91` dial code, which is what `/common/countries` reads.
+
+⚠️ **This was not true before 2026-09-06** and it is the reason both live
+catalogs drifted ([O-44](OBSERVATIONS.md)). The seeders inserted blindly: two of
+them failed on a unique constraint and aborted everything after them, and the
+third — `sub_profession` has no unique constraint — silently added a second copy
+of all 104 rows every time it ran.
+
+⚠️ **A profession that somebody deliberately disabled stays disabled.** The seed
+refreshes the catalog, not the decision about what to show.
 
 ---
 

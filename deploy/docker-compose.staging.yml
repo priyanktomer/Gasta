@@ -32,8 +32,24 @@
 name: gasta-staging
 
 services:
-  api:
+  # ⚠️ **Every service here is named `staging-…`, and that is load-bearing.**
+  #
+  # Compose registers each service name as a DNS alias on *every* network the
+  # service joins, and this API joins prod's network so prod's Caddy can reach
+  # it. When it was called `api`, prod's network had two containers answering to
+  # `api` — and `reverse_proxy api:8080` in the Caddyfile resolved to whichever
+  # Docker felt like. When `mysql` and `redis` were also called that, staging's
+  # own API resolved them the same ambiguous way and **wrote to production's
+  # database**. Proved on 2026-09-06: an account signed up on staging appeared
+  # on prod immediately.
+  #
+  # Names that cannot collide are the fix. Do not rename these back.
+  staging-api:
     image: gasta-api:${GASTA_TAG:-latest}
+    # Fixed, because the Caddyfile addresses this container by name rather than
+    # by service alias — the one route on this host that must never be
+    # ambiguous.
+    container_name: gasta-staging-api
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -41,10 +57,14 @@ services:
       # Sharing prod's server and using a second schema would mean one bad
       # `ddl-auto` run could still reach production data — which is the entire
       # thing this file exists to prevent.
-      GASTA_DB_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-gasta}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata
+      #
+      # ⚠️ **`staging-mysql`, never `mysql`.** `mysql` resolves on prod's
+      # network too, and that is exactly how this file spent its first ten days
+      # pointing at production.
+      GASTA_DB_URL: jdbc:mysql://staging-mysql:3306/${MYSQL_DATABASE:-gasta}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Kolkata
       GASTA_DB_USERNAME: ${MYSQL_USER:?set MYSQL_USER in .env.staging}
       GASTA_DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env.staging}
-      GASTA_REDIS_HOST: redis
+      GASTA_REDIS_HOST: staging-redis
       GASTA_REDIS_PORT: 6379
       GASTA_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}
       GASTA_ALLOWED_ORIGINS: https://${GASTA_STAGING_DOMAIN:?set GASTA_STAGING_DOMAIN in .env.staging}
@@ -53,9 +73,9 @@ services:
       # logs pushes instead of sending them — and a test on staging cannot
       # notify a real user's phone.
     depends_on:
-      mysql:
+      staging-mysql:
         condition: service_healthy
-      redis:
+      staging-redis:
         condition: service_healthy
     networks:
       - internal
@@ -63,13 +83,18 @@ services:
       # name. It is the only service here that joins it — the staging database
       # and Redis stay on the internal network and are reachable from nothing
       # but this API, exactly as in production.
+      #
+      # ⚠️ Being on this network still means prod's `mysql` and `redis` are
+      # resolvable from here. Nothing points at them any more, but a future
+      # edit that writes `mysql` would reach production again and say nothing.
+      # The real answer is a network shared with Caddy alone; see O-50.
       - gasta_internal
     deploy:
       resources:
         limits:
           memory: 1500m
 
-  mysql:
+  staging-mysql:
     image: mysql:8.0.46
     restart: unless-stopped
     environment:
@@ -96,7 +121,7 @@ services:
         limits:
           memory: 1g
 
-  redis:
+  staging-redis:
     image: redis:7-alpine
     restart: unless-stopped
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}", "--appendonly", "yes"]

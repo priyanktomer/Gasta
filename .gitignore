@@ -34,3 +34,12 @@ Thumbs.db
 deploy/.env
 deploy/*.env
 !deploy/.env.example
+
+# ── Build artifacts that landed here by accident ─────────────────────────
+# `deploy.sh` writes the image tar next to itself and deletes it when the
+# deploy finishes. A run that fails in between leaves one behind — 203 MB of
+# it — and `gasta-api-6223c52.tar` was committed that way, into a repository
+# whose whole point is that it holds documents.
+deploy/*.tar
+__pycache__/
+*.pyc

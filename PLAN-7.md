@@ -342,6 +342,19 @@ place, and not before.
 prod holds 52 professions and 31 tasks, staging came up empty and then rebuilt
 its own catalog from code to the same 52/104/36/10/3.
 
+⚠️ **That verification was wrong, and so was the claim above it.** On
+2026-09-06 an account signed up on staging appeared on production immediately:
+the two stacks named their services `api`, `mysql` and `redis` alike, staging's
+API sits on prod's network so Caddy can reach it, and Docker resolved those
+names to whichever container it liked. Requests to `yapan.duckdns.org` were
+sometimes served by the staging container, and staging's API could write to
+production's database. `X-Gasta-Environment` is set by Caddy per site rather
+than by the application, so it named the site block and never the container —
+which is why every check of this passed. See [O-50](OBSERVATIONS.md). Fixed by
+renaming staging's services to `staging-api`, `staging-mysql`, `staging-redis`;
+the probe that catches it writes through one hostname and reads through the
+other.
+
 **Not backed up, on purpose.** `nightly-backup.sh` covers prod only. Staging is
 meant to be disposable; if losing it would hurt, it has stopped being staging.
 

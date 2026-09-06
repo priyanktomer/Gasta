@@ -20,6 +20,385 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-50. Staging and production were the same stack wearing two hostnames
+
+**2026-09-06.** [PLAN-7 §C-1](PLAN-7.md) says, in bold: *"Its own MySQL
+container and its own volume, not a second schema on prod's server. A second
+schema would leave one bad `ddl-auto` run able to reach production data, which
+is the entire thing this exists to prevent."* It also says **"Verified: the two
+databases are provably separate."**
+
+They were not. Proved by writing to one and reading from the other:
+
+```
+sign up 9990000777 on STAGING only        -> 200
+then ask STAGING who that is              -> SIGN_IN
+then ask PROD    who that is              -> SIGN_IN     ← same database
+```
+
+**The mechanism is one line of Docker semantics.** Compose registers each
+service name as a DNS alias on **every** network that service joins. Staging's
+API joins prod's network — it has to, so prod's Caddy can reach it — and both
+stacks called their services `api`, `mysql` and `redis`. So on prod's network:
+
+| name | resolved to |
+|---|---|
+| `api` | prod's API **or** staging's API, whichever Docker returned |
+| `mysql` | prod's MySQL — and staging's API, being on both networks, could get either |
+| `redis` | the same |
+
+Two independent failures came out of that:
+
+- **`reverse_proxy api:8080` in the Caddyfile.** Requests to
+  `yapan.duckdns.org` were sometimes served by the **staging container**. The
+  `X-Gasta-Environment: staging` header is added by Caddy per site, not by the
+  application, so it says which *site block* answered and not which container —
+  which is why this looked fine every time it was checked.
+- **Staging's `GASTA_DB_URL: jdbc:mysql://mysql:3306/`.** Staging's API could
+  resolve prod's MySQL and write to it. The one thing staging exists to prevent
+  is the one thing it was doing.
+
+⚠️ **How much of this session was spent believing a lie.** Every "staging"
+verification here — the token probe, `initial-setup`, the duplicate
+sub-professions, the dedupe — went to whichever database answered. The catalog
+that came back looking repaired was staging's; production's was still broken and
+reported as fixed. Two readings of `/countries` taken minutes apart disagreed
+with each other and the honest explanation was the true one.
+
+⚠️ **It also means every reassuring measurement of the last ten days is worth
+nothing**, including C-1's own verification. A test that reads back through the
+same ambiguous name cannot detect this. The probe above can, because it writes
+through one hostname and reads through the other.
+
+**Fixed** by giving staging names that cannot collide: `staging-api` (with a
+fixed `container_name: gasta-staging-api`, which the Caddyfile addresses),
+`staging-mysql`, `staging-redis`. Re-running the probe now gives SIGN_IN on
+staging and **SIGN_UP** on prod.
+
+⚠️ **Residue, deliberately not fixed today.** Staging's API is still on prod's
+network, so prod's `mysql` and `redis` remain *resolvable* from it — nothing
+points at them, but a future edit that writes `mysql` reaches production again
+and says nothing. The real answer is a third network holding only Caddy and
+`staging-api`, which means editing prod's compose file too. Worth doing before
+anybody else edits that file.
+
+⚠️ **And the deploy never reloaded Caddy.** The Caddyfile is bind-mounted, so
+changing it does not change the container's config hash and `up -d` leaves Caddy
+running with the old routes in memory. Every Caddyfile change ever shipped has
+required somebody to restart the container by hand — nothing said so, and the
+deploy reported success. `deploy.sh` now ends with a graceful `caddy reload` on
+prod.
+
+---
+
+### O-49. ~~Caterer was missing two sub-professions and Event Planner listed two of its own twice~~ ✅ fixed 2026-09-06
+
+In the middle of the Caterer block of the seed:
+
+```java
+new AddSubProfessionDto("Wedding & Related Events", "Caterer"),
+new AddSubProfessionDto("Birthday, Anniversary etc",  "Caterer"),
+new AddSubProfessionDto("Cultural Events",  "Event Planner"),   // ← Caterer
+new AddSubProfessionDto("Long term Service", "Caterer"),
+new AddSubProfessionDto("Other",            "Event Planner"),   // ← Caterer
+```
+
+So **nobody could book a caterer for a cultural event, or pick "Other"** — the
+two options were simply absent from that picker — and Event Planner showed
+"Cultural Events" and "Other" twice, one under the other, in a list a user
+scrolls.
+
+**How it was found, which is the point.** Not by reading the file; it has been
+read many times. The seed used to insert blindly, so the duplicate rows went in
+and nothing anywhere disagreed with anything. Once `addSubProfessions` started
+matching on (profession, name), the live catalog came back with **102** distinct
+pairs where the code lists **104** — and that two-row gap is what pointed at the
+lines.
+
+⚠️ **A blind insert cannot tell you it is wrong.** The duplicate was in the
+database from the first day the catalog was seeded, visible in the app, and
+completely silent. The upsert did not fix this defect — it *revealed* it, which
+is worth more.
+
+`SchemaBuiltFromEntitiesTest` still pins 104, and now 104 entries are 104
+distinct pairs rather than 104 rows with two of them repeated.
+
+---
+
+### O-48. One unset property closed every public endpoint, and said nothing about itself
+
+Upgrading access-app from 2.1.2 to 2.1.6 turned **every** public endpoint into a
+401 — `otp-request`, `login-verify`, `sign-up-verify`, `countries`,
+`legal-document`, even `health`. Nobody could have signed up or signed in.
+
+```
+Expecting empty but was: ["GET  /api/v1/yapan/common/health          → 401",
+                          "POST /api/v1/yapan/common/otp-request     → 401",
+                          "POST /api/v1/yapan/common/sign-up-verify  → 401", ...]
+```
+
+**The cause is one property that does not exist.** access-app 2.1.3 added
+exposed-header support to its CORS block and reads the value like this:
+
+```java
+config.setExposedHeaders(List.of(
+    accessAppCorsConfig.getConfig().get("exposed-headers").replaceAll(" ", "").split(",")));
+```
+
+`application.properties` here sets six `access-app.cors.config.*` keys and has
+never set `exposed-headers`. So the value is null, and the CORS configuration
+source throws on every request.
+
+⚠️ **What it looked like is the whole point of this entry.** Not a CORS error.
+Not a NullPointerException in the log. Not a 500. Public endpoints answering
+**401** — with the security configuration completely correct, the antmatcher
+resolving to `/api/v1/yapan/common/**`, the security mode right, and nothing
+anywhere naming CORS. Two hypotheses about Spring Security's authorization rules
+were wrong before the property was even suspected; what settled it was adding
+the key and watching the suite go green.
+
+**Two fixes, because there are two defects.**
+
+- Here: `access-app.cors.config.exposed-headers=Authorization, ntkn, atsh, ntsh`.
+  Those are the four session headers, and a browser client cannot read them
+  without this. The app is a phone and is not subject to CORS at all, so this
+  changes nothing for it — the point is that the key is now set.
+- In the library: every CORS value is read through one helper that treats an
+  absent key as an empty list. A setting nobody configured must not be able to
+  take an application down, and `max-age` had the same shape.
+
+⚠️ **`EndpointAuthenticationSweepTest.publicEndpointsAreStillPublic` is the only
+reason this was caught.** It exists precisely because "a security change that
+closed them would lock every new user out of the product while every other test
+stayed green" — which is what happened, word for word. Without it this would
+have been deployed, and the symptom on the phone would have been "the backend is
+down" while `/health`… also answered 401.
+
+⚠️ **The upgrade was needed for [O-42](#o-42) and the versions in between were
+never exercised.** `JeevikaService` was pinned to access-app 2.1.2 while the
+library's own repository had moved to 2.1.5, so three releases of an
+authentication library had accumulated unread. That gap is the thing to avoid
+repeating: upgrade one version at a time, or do not let it open.
+
+⚠️ **2.1.3 is not in the local Maven repository at all** — only
+`.lastUpdated` markers, no jar — so an offline build cannot resolve it and a
+bisect that appears to "pass" on it has actually run no tests. Worth knowing
+before trusting the next bisect across these versions.
+
+---
+
+### O-47. The deploy tag names a commit in the wrong repository
+
+`deploy.sh` computes `TAG` from `git -C .. rev-parse --short HEAD` — and `..`
+from `deploy/` is the **Gasta documents repository**, not `JeevikaService`. The
+tar sitting in `deploy/` is `gasta-api-6223c52.tar`, and `6223c52` is a commit
+that contains no code.
+
+**Why it matters.** The one question worth asking during an incident is "which
+build is running", and the image tag is the only place the answer could live. It
+currently answers with the SHA of whatever documentation was last edited — which
+is not merely useless, it is *confidently wrong*: two different backends can
+carry the same tag, and the same backend two different ones.
+
+**Size:** one line — `git -C ../JeevikaService rev-parse --short HEAD`. Worth
+also stamping it on `/health` so the running server can be asked directly.
+
+**Fixed**, along with the thing that made it visible: `deploy/gasta-api-6223c52.tar`
+was **committed** — 203 MB of Docker image in a repository whose stated purpose
+is that it holds documents and nothing else. `deploy.sh` writes that tar beside
+itself and deletes it when the deploy finishes, so a run that failed in between
+left one behind and it went in with the next `git add -A`. Untracked and
+gitignored now. ⚠️ **The blob is still in the history** — every clone still
+downloads it — and getting it out means rewriting history, which is not
+something to do to somebody else's remote without asking.
+
+---
+
+### O-46. A refresh token is accepted as an access token, and the signing key is a constant in source
+
+Two things found while fixing [O-42](#o-42), both in access-app, neither fixed
+because neither is what was reported and both need a decision.
+
+**The tokens are not told apart.** `generateJwtToken` sets the subject
+`Access_APP_JWT` and `generateRefreshToken` sets `Access_APP_REFRESH`, and
+**nothing reads either**. `getAuthenticationFromJwt` takes any token this server
+signed, so the 7-day refresh token works as a bearer credential on every
+authenticated endpoint — the long-lived token doing the short-lived token's job,
+which is the exact thing having two of them is meant to prevent. It goes the
+other way too, which is why `LoginServiceImpl.logout` gets away with handing the
+*access* token to a method named `getAuthenticationFromRefreshToken`.
+
+⚠️ **The check is three lines and the fix is not**, which is why this is written
+down rather than done: adding it breaks logout until the app also sends `ntkn`
+on that call, so it is a server change and an app change that have to ship
+together.
+
+**`AccessAppConstants.JWT_KEY` is a literal** in the source, in a library
+published to GitHub Packages. Anybody who reads it can mint a token for any
+phone number on any deployment that uses this library — prod and staging share
+it today, so a token minted for one is valid on the other.
+
+⚠️ **Rotating it signs everybody out once**, which is the only reason it is not
+a one-line change. It should become `${access-app.jwt-key}` with the current
+value as the default, so nothing breaks on upgrade and prod can be given a real
+secret from the environment on a chosen day.
+
+**Size:** an hour each, plus a coordinated release for the first.
+
+---
+
+### O-45. India is in the database, disabled, and nothing can enable it
+
+`/api/v1/yapan/common/countries` returns `[]` — on **prod and on staging**, right
+now. The row exists; `IS_ENABLED` is 0.
+
+`addCountry` creates every country disabled on purpose ("an admin adding a row
+for a report must not thereby put it in every user's login screen"), there is no
+enable-country endpoint next to `enable-state`, and hand-written SQL is not
+allowed any more ([O-30](#o-30)). So the only country this product serves could
+not be switched on by any means the system provides.
+
+⚠️ **It looked fine, which is why it lasted.** `CountryService` in the app falls
+back to a built-in India, deliberately, so the login screen shows `+91` and
+nobody notices that the server has been answering "we serve nowhere" since the
+catalog was rebuilt. The comment in that file even asserts "India is the only
+one enabled" — a claim that was never true.
+
+**Fixed** in `InitServiceImpl.addIndia`: the seed enables India and gives it the
+`+91` dial code, because serving India is what this product *is* rather than an
+administrator's guess. Takes effect on the next `initial-setup`.
+
+---
+
+### O-44. `initial-setup` could only ever insert, so it could never repair anything — and it doubled the sub-professions
+
+Run it twice and this is what comes back, verified against staging on
+2026-09-06:
+
+```
+Could not add Countries.   Duplicate entry 'IND' for key 'location_country...'
+States added successfully.
+Could not add Profession.  Duplicate entry 'Maid' for key 'profession...'
+SubProfessions added successfully.
+```
+
+Three different behaviours from four seeders, and **every one of them is wrong**:
+
+- `addCountry` and `addProfessions` insert blindly. `NAME` and `CODE` are
+  unique, so the first row that already exists throws — and `addProfessions`
+  does one `saveAll`, so **one duplicate name loses all fifty professions**. A
+  first run that failed halfway could never be finished, and a column added
+  after the rows (`code` was the last one) could never reach a profession that
+  already existed.
+- `addSubProfessions` also inserts blindly, but `sub_profession` has **no unique
+  constraint**, so it did not fail — it silently added a second copy of all 104
+  rows. Staging was carrying 208 sub-professions.
+- `addStates` was correct all along, by accident: it passes an explicit id, so
+  `save` merges.
+
+⚠️ **The one that did not fail is the dangerous one.** A constraint violation is
+loud and got fixed within the hour; the missing constraint doubled a live
+catalog and reported success. "It returned 200" is not the same as "it did the
+right thing", and here they pointed in opposite directions.
+
+⚠️ **This is what the product owner reported as "signing up the first user no
+longer initialises the database".** It does still initialise an empty one. What
+it stopped being able to do is *repair* one — and every rebuilt or half-built
+database since has needed exactly that.
+
+**Fixed.** All three now match on the natural key and update in place, so the
+seed is what it always claimed to be: safe to run whenever.
+`ReferenceDataSeeder.dedupeSubProfessions` disables the copies already in the
+two databases — disabled rather than deleted, because a duplicate may be on
+somebody's posted job and every catalog read filters on `IS_ENABLED` anyway.
+
+---
+
+### O-43. A wrong OTP threw you out to a fresh login screen
+
+Type one digit wrong and the app did not say "that code is wrong". It cleared
+the navigation stack and put up a **new login screen** — and the sentence the
+server had carefully written for exactly this moment ("That code is wrong or has
+expired. Please check the code, or ask for a new one.") was never shown.
+
+**Why.** `login-verify` answers **401** for a refused OTP, deliberately, so a
+mistyped code is not reported as a server fault ([O-2](#o-2) is the same
+decision one endpoint over). `ApiService` had just been taught to refresh-and-
+retry on 401 as well as 412, and that rule did not exclude public calls. So a
+wrong OTP made the app try to refresh a token it does not have on the login
+screen, the refresh answered `rejected`, and `rejected` means clear the session
+and start again.
+
+⚠️ **Both changes were right on their own.** 401 for a bad OTP is correct; so is
+refreshing on a 401. What was missing is that *public endpoints have no access
+token behind them*, so their 401 can never mean "your session ended". A rule
+about authenticated calls was applied to every call.
+
+**Fixed** with `!isPublic` in that condition, and `test/public_401_test.dart`
+pins it by counting the requests the server actually receives — the assertion
+fails the moment a second one goes to the refresh endpoint.
+
+---
+
+### O-42. Refreshing a token started a new session, which is why people were logged out over and over
+
+**The bug behind the whole complaint.** `AccessServiceImpl.refreshToken` called
+`addTokensToResponseHeaders`, and the first thing that does is
+`createNewUserSession` — a **brand-new session id**, written over the user's
+row. Verified against the live server before the fix:
+
+| after one refresh | |
+|---|---|
+| the previous access token | **401** |
+| the previous refresh token | **401** |
+| the new pair | 200 |
+
+So the moment anything refreshed, every token issued before it died. Not on
+expiry — instantly.
+
+**What that does to a phone.** Opening a screen fires five or six calls at once.
+They get 412 together. One refreshes, and the other five are now holding a token
+that stopped working while it was in the air. Worse, a second refresh — a poll,
+a retry, a call that started a moment later — presents a refresh token that no
+longer exists and gets 401, which the app reads as *the server was reached and
+said no*: clear the tokens, go to the login screen, and getting back in needs an
+OTP.
+
+⚠️ **Every single-flight gate in the app exists because of this one line.** The
+`_inFlight` future in `LoginService`, the did-the-stored-token-change check, the
+background-call exclusion, "a 5xx is not a rejection" — all of it is scaffolding
+holding up a server that was demolishing its own sessions. Three commits on
+2026-08-28 ([O-37](#o-37), [O-40](#o-40), a601ca0) each fixed one more caller of
+a race that did not need to exist.
+
+**Fixed** in access-app 2.1.6: a refresh re-issues both tokens **on the same
+session**. The session is what the user has; the tokens are only how they carry
+it. Signing in elsewhere and logging out still end it — those are the events
+that should. Old tokens now live out their own expiry, two refreshes at once are
+harmless, and the 7-day refresh window is real because each refresh extends it.
+
+Also in that release: `JwtUtils` writes the session row with one `save` instead
+of a delete and an insert in two transactions. Between those two statements the
+row did not exist, and any request arriving in that window got "Invalid Session"
+— milliseconds wide, on exactly the code path that runs when a sign-in fires
+several requests at once.
+
+⚠️ **Non-rotating refresh tokens are a deliberate trade.** A stolen refresh
+token stays usable until its 7 days are up, where rotation would have shortened
+that. Rotation only pays for itself with replay *detection* — notice the reuse,
+kill the session — and this implementation had none: it simply broke the honest
+client. A revocation path ([O-46](#o-46) is next door) is the thing worth
+building, not this.
+
+**And the seventh day never worked either.** `LoginServiceImpl.tokenIsNoGood`
+matched `"expired jwt"`; jjwt writes `"JWT expired at ..."`. Two words the other
+way round, never matched — so a refresh token that had simply run out came back
+**500**, the app read 5xx as "keep the session, the server is having a moment",
+and sat there retrying a token that would never work again instead of asking for
+one clean sign-in.
+
+---
+
 ### O-41. ~~Sign-up had no way back — the same bug the OTP screen was already fixed for~~ ✅ fixed 2026-08-28
 
 A phone number the server does not recognise lands on the sign-up form. That

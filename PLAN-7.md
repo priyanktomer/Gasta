@@ -211,7 +211,7 @@ volume for the first year this is a few hundred rupees a month.
 
 ---
 
-### B-3. L-8, slots for farm and construction work
+### B-3. ~~L-8, slots for farm and construction work~~ ✅ built 2026-09-06
 
 Slots are `MORNING / AFTERNOON / EVENING`, which fits domestic work — a maid
 comes at eight.
@@ -230,12 +230,42 @@ see the `preferred_enum_jdbc_type=VARCHAR` note in `application.properties` —
 so the column is fine, but every screen that switches on `Slot` needs a case,
 and `SlotLabelTest` will name the ones that do not.
 
-**The part that needs you:** whether a farm job is booked as a day, or as a
-window, or as "we start at five and you go home when it is done". That is a
-question about how the work is actually arranged, and it is not a developer's
-to answer.
+**Answered:** *"Mapping is profession-wise but if needed some sub-profession(s)
+should be able to override that. It remains profession-wise until some special
+sub-profession comes."*
 
-**Size:** a day of code. The decision is the work.
+**Built.** `profession_slot_option` — profession, nullable sub-profession, slot
+— the same shape as `profession_note_option`, seeded during initial setup and
+served on the rules endpoint.
+
+⚠️ **It differs from note options in one way that matters.** Note chips at
+several levels are *merged*, because more chips is more help. Slots are a
+choice of vocabulary, so a sub-profession row **replaces** its trade's list.
+Offering "Afternoon Slot" beside "06:00 AM - 10:00 AM" is two ways of
+describing a day that mean different things, on one screen.
+
+Six trades are seeded — farm labour, harvesting, farmer-for-lease, agricultural
+machinery, construction labour, mason. Everything else keeps the built-in four,
+so adding a profession does not mean remembering to give it slots.
+
+⚠️ **No sub-profession override is seeded, and that is the honest answer to
+"until some special sub-profession comes".** Five of those six trades have no
+sub-professions at all; the sixth's are Tractor, Trolley, Harrow and the rest —
+kinds of equipment, not kinds of working day. Inventing a difference between a
+tractor's hours and a harrow's would be guessing at somebody's trade. The
+mechanism is built and tested; the first real override is one line in
+`ReferenceDataSeeder.SUB_PROFESSION_SLOTS`.
+
+⚠️ **Two hazards found on the way, both worth knowing.** `taskSlots` holds
+*positions*, not slots, so an override that shortens the list would have made
+index 3 either the wrong time of day or a crash — choosing a sub-profession now
+clears the picks. And the app's `Slot` enum mirrored only `E_1..E_4` while the
+rules parse used `byName`, which **throws**: the first farm profession served
+`C_0600_1000` would have stopped that profession's posting form opening at all.
+The parse skips unknown names now.
+
+**Still yours to say:** the mapping itself. Whether a tubewell specialist works
+to a window or a day is one line in `PROFESSION_SLOTS`.
 
 ---
 

@@ -383,17 +383,32 @@ doorstep flag from Water Supply turns it red.
 
 ---
 
-### C-3. The remaining 71 ad-hoc text styles
+### C-3. ◐ The ad-hoc text styles — the ratchet exists now, and the count was wrong
 
-154 became 71, and `tool/check_text_styles.py` holds that as a ratchet in CI.
+⚠️ **This entry said "154 became 71, and `tool/check_text_styles.py` holds that
+as a ratchet in CI." Both halves were false.** The file did not exist, nothing
+in CI checked anything, and the real count on 2026-09-06 was **150**. The gap
+between the remembered 71 and the measured 150 is precisely what a ratchet
+nobody wrote allows to happen, which is the argument for the ratchet rather
+than against it.
 
-The rest are concentrated in `worksheet_screen.dart` (18) and `widgets.dart`
-(14). They are not a rendering bug — the theme sets `fontFamily` globally, so a
-bare `TextStyle` still inherits Comfortaa — but each one is a size that does not
-move with the screen.
+They are not a rendering bug — the theme sets `fontFamily` globally, so a bare
+`TextStyle` still comes out in Comfortaa — but each one is a size that does not
+move with the screen. That is invisible on the reviewer's phone and too small
+on a 320px one, which is the phone this audience actually has.
 
-**Size:** an afternoon, and safe to do gradually because the ratchet stops it
-going the other way.
+**Done:** `tool/check_text_styles.py` is written, measured at **146** after four
+conversions in `worksheet_screen.dart`, and wired into CI alongside
+`check_l10n.py` and the new `check_initstate_context.py`. The count may fall and
+may not rise.
+
+**Left:** 146 conversions, still concentrated — `worksheet_screen.dart` (18),
+`widgets.dart` (16), `earner_tasks_screen.dart` (13),
+`posted_tasks_screen.dart` (13), `my_doorstep_orders_screen.dart` (12).
+
+**Size:** an afternoon, and genuinely safe to do gradually now that something
+stops it going the other way. ⚠️ Lower `BUDGET` in the same commit as any
+conversion, or the slack gets spent.
 
 ---
 
@@ -418,6 +433,25 @@ patchy connection with a data cap, and download size is a real reason not to.
 An App Bundle cuts the delivered size substantially, because Play ships only the
 architecture and density each device needs. That is a Play Console setting plus
 `flutter build appbundle`, not a code change.
+
+**Measured 2026-09-06 — it is worth more than "substantially" suggests.** Of the
+65 MB APK, **62.5 MB is native libraries, in three copies:**
+
+| | |
+|---|---|
+| `lib/arm64-v8a` | 21.0 MB |
+| `lib/armeabi-v7a` | 19.0 MB |
+| `lib/x86_64` | 22.5 MB |
+| everything else — dex, assets, resources | 2.6 MB |
+
+A phone needs **one** of those three. So the delivered size is about **26 MB
+rather than 65** — a 60% cut, on the download that decides whether somebody on
+a data cap installs at all.
+
+⚠️ **`x86_64` is 22.5 MB and no real phone can use it.** It exists for the
+emulator, and today every user downloads it. `flutter build appbundle` already
+works — it was run and produced a 66 MB upload artefact, which is the *upload*,
+not the download. Nothing here is blocked on code.
 
 ⚠️ **The bundled fonts are worth keeping** even though they are part of the
 size. The system-font detour was tried and reverted, for good reasons recorded

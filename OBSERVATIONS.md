@@ -20,6 +20,46 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-51. What a screen-by-screen walk on a device turned up, and what is still open
+
+**2026-09-06.** Every screen reachable from Home, Work, Today, Dashboard and
+Profile, on an emulator against staging, signed in as a demo account with seeded
+data — plus posting a job and placing a quote end to end.
+
+**Four defects were fixed on the spot** and are described in the commit "Four
+things found by walking every screen on a device": posting a job did nothing for
+most of the catalog, `My addresses` and a job's visits list spun for ever,
+"per per month" on every price band, and one successful quote disabling quoting
+for the rest of the session.
+
+⚠️ **Three of those four are silent.** Nothing threw where a user could see it,
+nothing appeared in the access log, and every one of them looks from the outside
+like "the app is slow" or "the backend is down". A screenshot pass would have
+caught the fourth and missed the rest — they were found by reading the app's own
+log through a **debug** build while driving it.
+
+**Still open, in the order they will annoy somebody:**
+
+| | What |
+|---|---|
+| a | **The quote list is stale after quoting.** Submit a quote and "Your Quotations" on that job says *No quotes found*; submit a second and it still shows the first amount. The quote is saved — the sheet just never refetches. So the one screen that tells an earner their quote landed says it did not. |
+| b | **Step 4 of posting says "No address saved yet" when an address exists.** It means "none picked yet", but it does not say that, and the person who saved an address yesterday reads it as the app having lost it. It should default to the home address. |
+| c | **Rates render the raw enum.** "₹550 / DAY", "₹600 / DAY" on the quote screens, where every other screen says "day". `payUnitLabel` exists and is not being called here. |
+| d | **"Call us +91 00000 00000".** The support number in the app is a row of zeros — not even the placeholder the server carries (`gasta.support.phone`). Tapping it dials nothing. T5.9 put a real number in the config for exactly this reason. |
+| e | **The Service Provider screen is off the design system**: a bright indigo app bar, on a screen reached from Profile, in an app where every other bar is plain. It looks like a different application. |
+| f | **"1 days"** on My earnings — no plural form. |
+| g | **Attendance shows "Rate: Not set"** on a job whose quote was accepted at ₹550/day. Either the agreed rate is not written when a quote is accepted, or this screen does not read it; worth an hour to tell which. |
+
+⚠️ **(d) and (e) are the kind of thing a user reports as "the app looks
+unfinished"**, and both are minutes of work. (a) is the one that costs money —
+an earner who cannot see their quote quotes again, or gives up.
+
+**Not a defect, recorded so it is not chased twice:** Doorstep Services lists
+all three professions as *Coming soon*. That is correct — it means no provider
+has registered nearby, and staging has none seeded.
+
+---
+
 ### O-50. Staging and production were the same stack wearing two hostnames
 
 **2026-09-06.** [PLAN-7 §C-1](PLAN-7.md) says, in bold: *"Its own MySQL

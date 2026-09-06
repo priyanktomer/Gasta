@@ -236,6 +236,67 @@ outages and cannot tell anybody about them; see [PLAN-7](PLAN-7.md) §C-4.
 
 ---
 
+## Road distance (PLAN-7 §B-2)
+
+Distances are a straight line unless a router is running. Valhalla is
+self-hosted because Google bills per request and OpenRouteService's free tier is
+aimed at non-commercial use — neither fits a product with paying users.
+
+⚠️ **It is off until you turn it on, and off is safe.** The container sits
+behind a compose profile, `gasta.routing.valhalla-url` defaults to empty, and
+every caller falls back to the straight line and the existing "(direct)"
+wording. A deployment with no router behaves exactly as the product always has.
+
+### 1. Build the tiles — somewhere else
+
+⚠️ **Not on the server.** Tile building is hours of CPU and tens of gigabytes of
+scratch, on the machine serving users. Build on a laptop or a throwaway VM.
+
+⚠️ **Take a regional extract, not all of India.** The product serves one area;
+Uttar Pradesh alone is a fraction of the size and of the build time. Geofabrik
+publishes per-state extracts.
+
+```bash
+mkdir -p valhalla_tiles && cd valhalla_tiles && curl -O https://download.geofabrik.de/asia/india/uttar-pradesh-latest.osm.pbf
+```
+
+```bash
+docker run --rm -v "$PWD:/custom_files" -e build_tar=False ghcr.io/valhalla/valhalla:latest
+```
+
+### 2. Copy them onto the server
+
+```bash
+tar czf tiles.tgz -C valhalla_tiles . && scp -i ~/.ssh/gasta_oci tiles.tgz ubuntu@yapan.duckdns.org:/tmp/
+```
+
+### 3. Start it, capped
+
+```bash
+cd /opt/gasta && docker volume create gasta_valhalla_tiles && docker run --rm -v gasta_valhalla_tiles:/dst -v /tmp:/src alpine tar xzf /src/tiles.tgz -C /dst && docker compose --profile routing up -d valhalla
+```
+
+⚠️ **Memory is capped at 1g and that number is not arbitrary.** Prod already
+commits 6.5g and staging 2.75g of 12g. 1g is what is genuinely spare, and the
+cap is the protection: a routing engine that grew without bound would take
+production with it, and no job-search feature is worth that.
+
+⚠️ Healthy means the tiles loaded. `docker compose ps valhalla` reporting
+healthy is the check — a container with no tiles starts fine and answers
+nothing.
+
+### 4. Point the API at it
+
+Add to `/opt/gasta/.env`, then redeploy:
+
+```bash
+GASTA_VALHALLA_URL=http://valhalla:8002
+```
+
+⚠️ **A job outside the extract keeps the straight line**, silently and
+correctly. That is why a regional build is safe to start with: it improves the
+area you serve and changes nothing elsewhere.
+
 ## Tests
 
 ```bash

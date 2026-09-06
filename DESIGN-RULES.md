@@ -177,3 +177,54 @@ whole value of this rule is that it is decided once and never varies.
 words.
 
 ---
+
+## 8. Every selectable thing looks the same (2026-09-06)
+
+**Rule.** Anything the user picks — a sub-profession, a time slot, a weekday, a
+"what should they know" chip, a weekend rule — is drawn with
+**`Widgets.selectionTile`**: a bordered surface that tints and thickens its
+border when chosen. Not a `RadioListTile`, not a `CheckboxListTile`, not a grey
+block that turns solid blue.
+
+**Why.** The posting wizard had four vocabularies for "choose one of these",
+on four consecutive screens:
+
+| Where | Was |
+|---|---|
+| Step 1, sub-professions | grey blocks, solid blue when picked, white text |
+| Step 2, times (single-select profession) | bare radio, control on the left |
+| Step 2, times (multi-select profession) | bare checkbox, control against the **far right edge** of the card, a thumb's width from its label |
+| Step 3, note chips | bordered pill with a tick — the one that was right |
+
+A grey block that turns blue reads as something disabled becoming enabled, and
+nothing on the screen distinguishes the grey blocks you may press from the grey
+blocks you may not. The radio/checkbox split was worse than inconsistent: the
+*same list of times*, in the same wizard, put its control in two different
+places depending on a flag from the server.
+
+**The two shapes that stay.** Round means pick one, square means pick several
+— Material's convention, which people read without being taught. `selectionTile`
+draws a radio for `single: true` and a checkbox otherwise. Both were circles for
+one build and the control stopped saying whether a second tap would add or
+replace; that is the mistake to not repeat.
+
+**A grid cell gets no tick.** `center: true` (a chip in a grid) draws the label
+alone — a tick in a four-across weekday cell left so little room that "Mon"
+rendered as "M" and "Sat" wrapped. A chip that short is read by its fill.
+
+**Grid rows size to their own content.** `_optionGrid` is rows of `Expanded`
+inside `IntrinsicHeight`, not a `GridView`: one `childAspectRatio` for every
+option is a guess about the longest label, and the guess cut the second line
+off "Sweep-Mop". Positions are still fixed, so §1 still holds.
+
+**Also fixed with it.** The step card no longer stretches — the scroll is
+outside it, so step 1 of a job with no sub-professions is a short card rather
+than a heading and a counter stranded at the top of a full-screen white
+rectangle. The segmented control is a pill on a recessed track. The "once"
+date and time are a matched pair of fields, replacing a 48-pixel white number
+on a light-blue slab and a picker dialog themed in `redAccent`, `amberAccent`
+and `blueAccent`.
+
+**Not covered.** `buildFixedFilterBar` (§1) stays as it is: a filter bar is a
+different job from a form control, and it carries icons that these do not.
+

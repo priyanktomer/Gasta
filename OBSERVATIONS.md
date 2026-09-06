@@ -20,6 +20,52 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-52. ~~Four more places that threw where they should have shrugged~~ ✅ fixed 2026-09-06
+
+**2026-09-06.** After the posting form's rules parse was moved somewhere it
+could be tested, the same question was asked of the rest of the app: *where
+does a value we did not write take a screen down?* Four answers, all fixed in
+the commit "Four more parses that threw where they should have shrugged".
+
+1. **`NoteOption.fromJson` threw on a row with no code** — inside
+   `ProfessionRuleDto.fromPayload`, whose own documentation promises nothing in
+   it can throw. Every other row parse in that factory skips what it cannot
+   read; this one had `json['code'] as String`. The chips are configured rows
+   now, and the admin API can write one without a code. Now null, and skipped,
+   like `SlotOption.fromJson`.
+
+2. **`laundry_booking_screen` cut `pickupDate` to sixteen characters without
+   checking it had sixteen.** Three other screens print the same field and all
+   three check first. A date sent without a time is ten characters, and the
+   fourth screen would have thrown a RangeError inside `build` — a red screen,
+   not a missing line. All four now go through `PickupDropOrder.shortStamp`,
+   which is the one place that knows the rule.
+
+3. **Two cache timestamps were read out of SharedPreferences with
+   `DateTime.parse`.** In `CategoryService` a throw there escapes into the
+   category fetch, which is what draws the home screen — an unreadable
+   timestamp would have meant *no categories*, which is exactly the white
+   screen this project has chased before. `location_service` had the same
+   line. Both use `tryParse` and fall back to "the cache is old".
+
+4. **A bare `firstWhere` in `become_provider_screen`** on a list that is
+   refetched, in an `onChanged` that is not inside a `try`.
+
+**What was checked and found already sound**, so it is not looked at again:
+every `@Enumerated` in the backend is `STRING`, no `values()[ordinal]`
+anywhere, every `.get(0)` is guarded by an emptiness check, no `int.parse` or
+`double.parse` on server data, and the three `DateTime.parse` calls on server
+timestamps read a field the server formats as `ISO_DATE`.
+
+**Verified end to end**, since a parse change is invisible until something
+draws: three jobs posted from the emulator and read back out of the database as
+a different account — a daily farm job stored `D_09_17` (the third slot, chosen
+deliberately), a maid job stored `E_3`+`E_4` on weekdays with `E_2` at the
+weekend, and a Wednesday-and-Saturday farm job for three workers stored
+`D_08_16` on both days with `BRING_TOOLS`.
+
+---
+
 ### O-51. ~~What a screen-by-screen walk on a device turned up~~ ✅ all closed 2026-09-06
 
 **2026-09-06.** Every screen reachable from Home, Work, Today, Dashboard and

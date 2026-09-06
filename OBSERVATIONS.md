@@ -20,7 +20,7 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
-### O-51. What a screen-by-screen walk on a device turned up, and what is still open
+### O-51. ~~What a screen-by-screen walk on a device turned up~~ ✅ all closed 2026-09-06
 
 **2026-09-06.** Every screen reachable from Home, Work, Today, Dashboard and
 Profile, on an emulator against staging, signed in as a demo account with seeded
@@ -38,7 +38,10 @@ like "the app is slow" or "the backend is down". A screenshot pass would have
 caught the fourth and missed the rest — they were found by reading the app's own
 log through a **debug** build while driving it.
 
-**Still open, in the order they will annoy somebody:**
+**All seven are now fixed** — see the commit "The seven things O-51 left open"
+and, for the last one, "The accepted quote is the rate". Each is struck through
+below with what it actually was, because in three cases the visible symptom and
+the cause were in different places.
 
 | | What |
 |---|---|
@@ -50,9 +53,24 @@ log through a **debug** build while driving it.
 | f | **"1 days"** on My earnings — no plural form. |
 | g | **Attendance shows "Rate: Not set"** on a job whose quote was accepted at ₹550/day. Either the agreed rate is not written when a quote is accepted, or this screen does not read it; worth an hour to tell which. |
 
-⚠️ **(d) and (e) are the kind of thing a user reports as "the app looks
-unfinished"**, and both are minutes of work. (a) is the one that costs money —
-an earner who cannot see their quote quotes again, or gives up.
+⚠️ **(g) was much bigger than it looked.** "Rate: Not set" was not a display
+gap: `currentAmount` read only `task.fixedQuoteAmount` and `openQuoteLimit`, and
+**accepting a quote writes neither**. So every job filled the ordinary way — post
+open to quotes, accept one — had no rate anywhere in the system. The register
+could total nothing, and the earner's own month came to **₹0**. Fixed by reading
+the accepted quote, per earner, excluding revoked ones; pinned by
+`AcceptedQuoteIsTheRateTest`.
+
+⚠️ **(b) was not a wording problem either.** `taskAddressId` defaulted to `1`
+and the screen fetched that row — address id 1 belongs to whoever is first in
+the table. Beyond the misleading sentence, the one field in the request that
+says *where the work is* was a guess at somebody else's address.
+
+⚠️ **(d) was fixed on the wrong endpoint first.** The support number was added
+to `fileGrievance` rather than `grievanceOfficer`, because both build a map
+containing `acknowledgeWithinHours` and the first match won. Two deploys went
+out before the endpoint was checked rather than the source — the lesson being
+that "I changed it and deployed" is not evidence, and `curl` on the endpoint is.
 
 **Not a defect, recorded so it is not chased twice:** Doorstep Services lists
 all three professions as *Coming soon*. That is correct — it means no provider

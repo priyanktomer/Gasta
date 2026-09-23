@@ -228,3 +228,25 @@ and `blueAccent`.
 **Not covered.** `buildFixedFilterBar` (§1) stays as it is: a filter bar is a
 different job from a form control, and it carries icons that these do not.
 
+## 9. A one-time code is six boxes over one field (2026-09-23)
+
+**Rule.** Every place that asks for an SMS code uses **`OtpBoxes`**
+(`lib/design/otp_boxes.dart`). Never a plain `TextField` labelled "OTP", and
+never six separate fields.
+
+**Why one field underneath.** Six separate fields break the three things people
+actually do with a code. Paste puts all six digits into one box. SMS autofill
+does the same. Backspace needs focus walked back by hand, because an empty
+field has nothing to delete. A single hidden field handles all three natively,
+and the boxes only draw its text.
+
+**Where it submits on its own.** Only where the code is the last thing on the
+screen, which is signing in. On sign-up the code is one of four answers, so
+completing it does not mean the form is done. The self-submit fires **once per
+completion**. A controller also notifies on selection changes, and a second
+submit of a one-time code always fails right after the first one succeeds.
+`otp_boxes_test` checks this.
+
+**After a wrong code** the boxes are emptied and keep focus. The retry is six
+digits typed, not six deleted and then six typed.
+

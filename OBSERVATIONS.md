@@ -20,6 +20,35 @@ this and it was fine" is worth as much as the fix.
 
 ## Open
 
+### O-53. ~~Signing out left the last person's data behind for the next one~~ ✅ fixed 2026-09-23
+
+**2026-09-23.** Found while adding a greeting to the home screen, which needed
+to cache the user's name. `NavigationHelper.clearAuthTokens`, which every
+sign-out goes through, removed the tokens and `login_date` and nothing else.
+`CacheService` kept every cached response.
+
+Those responses are personal: `my_addresses`, `MY_EARNINGS_*`,
+`notifications_page0`, `household_schedule`, `POSTED_TASKS_*`,
+`RECEIVED_QUOTES_*`, the attendance registers. `fetchInto` falls back to
+`CacheService.readStale` when a request fails, and `readStale` ignores age on
+purpose, so a cache holds up to thirty days of data. On a phone a family shares,
+which is normal for this app's users, the next person to sign in could lose
+signal and see the previous person's earnings, addresses and notifications,
+shown as their own.
+
+**Fixed** by `CacheService.clearAll()`, called from `clearAuthTokens`. It walks
+the `_AT` stamps the same way `evictOldEntries` does, so it removes every
+response cache. It keeps `catalogKeys`, which describe professions rather than
+a person, and any unstamped setting such as the chosen language.
+`cache_service_test` covers both. No other preference key ends in `_AT`, so the
+sweep cannot touch a setting.
+
+**Worth knowing:** any new per-user cache is covered automatically, as long as
+it goes through `CacheService.write`. A screen that writes SharedPreferences
+directly with its own key would not be.
+
+---
+
 ### O-52. ~~Four more places that threw where they should have shrugged~~ ✅ fixed 2026-09-06
 
 **2026-09-06.** After the posting form's rules parse was moved somewhere it

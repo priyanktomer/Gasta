@@ -250,3 +250,27 @@ submit of a one-time code always fails right after the first one succeeds.
 **After a wrong code** the boxes are emptied and keep focus. The retry is six
 digits typed, not six deleted and then six typed.
 
+## 10. Colour means category, and labels never break inside a word (2026-09-23)
+
+**Colour.** A trade's colour is **`AppAccents.forCategory`**, everywhere: the
+stripe on a job in the Work tab, the dot on Today, the tinted tile on Home. It
+takes a code (`TRANSPORT_AND_LOGISTICS`) or a display name ("Transport and
+Logistics"). Do not pick a tile colour by index or at random. A colour that
+changes meaning from screen to screen teaches nothing. One that does not lets
+somebody who reads slowly recognise a trade before they have read its name.
+
+Colour that is not about a trade comes from `AppSemanticColors`: primary for
+the one thing a screen is for (the filled "Reserve or Schedule" card), info for
+guidance, and the rest.
+
+**Labels.** A label in a grid cell goes through **`WordSafeText`**. Flutter
+wraps at spaces, but it breaks a word wider than the line wherever it runs out
+of room, and on the smallest phone that drew "Constructio" / "n Laborer".
+`WordSafeText` shrinks a label only when its widest word cannot fit, so
+everything else keeps its normal size.
+
+**Pictures on choices.** Where a choice has a real-world picture, it carries
+one at the end of its tile: a sunrise, a sun or a moon on time slots
+(`slotIcon`), a dog, a staircase or a plate on job notes. Unknown codes get no
+picture, never a guessed one.
+

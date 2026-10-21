@@ -120,3 +120,11 @@
 # and so a stray http:// request is redirected rather than refused. Caddy adds
 # this redirect automatically for any site with a hostname — it is written out
 # here so that behaviour is visible rather than assumed.
+
+# ⚠️ **A second project's sites, served by this same Caddy.** It shares the VM,
+# so it shares the one process holding ports 80 and 443. Its site blocks live in
+# /opt/edge/sites on the host, mounted read-only at /etc/caddy/sites. Last on
+# purpose: nothing above depends on it, and a glob that matches no file is a
+# warning, not an error, so this Caddyfile still loads with that directory
+# empty. Gasta's site blocks are all above this line; do not move them below.
+import /etc/caddy/sites/*.caddy

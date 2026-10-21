@@ -15,6 +15,17 @@
 # no benefit today. When there is a second VM, the load balancer goes in front
 # then and nothing below changes.
 
+# ⚠️ **Memory: this VM is shared, and Gasta has about 3 GB of it.** Another
+# project runs on the same instance, so every container here has a hard
+# `mem_limit` (there is no swap, so the limit is real RAM). Prod + staging:
+#
+#     prod      api 896M · mysql 768M · redis 64M · caddy 128M · duckdns 16M
+#     staging   api 640M · mysql 512M · redis 64M
+#
+# 3,088 MiB with everything up. Stopping staging when nobody is using it (see
+# RUNBOOK) leaves prod at 1,872 MiB. Raise a limit here only after taking the
+# same amount from somewhere else in this file or the staging one.
+
 name: gasta
 
 services:
@@ -31,6 +42,13 @@ services:
       # container that re-issues on every restart will eventually be refused.
       - caddy_data:/data
       - caddy_config:/config
+      # ⚠️ **A second project's sites, served by this Caddy.** The Caddyfile
+      # ends with `import /etc/caddy/sites/*.caddy`; that project drops its
+      # site blocks in /opt/edge/sites and its static files in /opt/edge/www.
+      # Read-only: this container can read them and change neither. Gasta's
+      # own site blocks are above the import and do not depend on it.
+      - /opt/edge/sites:/etc/caddy/sites:ro
+      - /opt/edge/www:/srv/www:ro
     environment:
       # Caddy reads the hostname from here so the same file serves any domain.
       GASTA_DOMAIN: ${GASTA_DOMAIN:?set GASTA_DOMAIN in .env}
@@ -41,7 +59,12 @@ services:
       # stack must still start, and `staging.invalid` is a name that can never
       # resolve, so Caddy asks for no certificate for it.
       GASTA_STAGING_DOMAIN: ${GASTA_STAGING_DOMAIN:-staging.invalid}
-    networks: [internal]
+    # `edge` is the network the other project's containers join so this Caddy
+    # can reach them by name. Created outside compose (`docker network create
+    # edge`) and declared external below, so taking this stack down never
+    # removes a network another project depends on.
+    networks: [internal, edge]
+    mem_limit: 128m
     depends_on:
       api:
         condition: service_started
@@ -92,11 +115,11 @@ services:
       # in every layer cache and every registry that image ever reaches.
       - ${GASTA_FCM_KEY_PATH:-/opt/gasta/fcm-service-account.json}:/run/gasta/fcm-service-account.json:ro
     networks: [internal]
-    deploy:
-      resources:
-        limits:
-          # The JVM is told 70% of this (MaxRAMPercentage in the Dockerfile).
-          memory: 3g
+    # The JVM takes 70% of this for heap (MaxRAMPercentage in the Dockerfile),
+    # about 627M, leaving ~270M for metaspace, threads and the code cache.
+    # ExitOnOutOfMemoryError (also there) makes a full heap a clean restart
+    # rather than a JVM limping on.
+    mem_limit: 896m
 
   mysql:
     image: mysql:8.0.46
@@ -115,6 +138,10 @@ services:
       # every 8.0 image variant and a wrong default is discovered as mojibake in
       # somebody's name, months later.
       - --default-time-zone=+05:30
+      # Sized for the 768M below. performance_schema alone held 200-300M of
+      # the ~550M this used before the cap, for instrumentation nobody reads.
+      - --innodb-buffer-pool-size=256M
+      - --performance-schema=OFF
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -126,10 +153,7 @@ services:
       retries: 12
       start_period: 40s
     networks: [internal]
-    deploy:
-      resources:
-        limits:
-          memory: 3g
+    mem_limit: 768m
 
   redis:
     image: redis:7-alpine
@@ -140,7 +164,12 @@ services:
     # holds the OTP hashes and the rate-limit counters; "unreachable" and
     # "unauthenticated" are different guarantees, and only one of them survives
     # somebody later adding a `ports:` line in a hurry.
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "yes"]
+    #
+    # maxmemory 40mb under a 64M limit: the gap is for Redis's own overhead and
+    # the copy-on-write pages an AOF rewrite's fork touches. Every key here has
+    # a TTL, so `volatile-lru` drops the least-recently-used expiring key
+    # rather than refusing writes, which would fail every OTP request.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "yes", "--maxmemory", "40mb", "--maxmemory-policy", "volatile-lru"]
     volumes:
       - redis_data:/data
     healthcheck:
@@ -152,10 +181,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks: [internal]
-    deploy:
-      resources:
-        limits:
-          memory: 512m
+    mem_limit: 64m
 
   # Keeps the DuckDNS record pointing at whatever address this host currently
   # has (PLAN-5 Phase 11).
@@ -185,10 +211,13 @@ services:
           sleep 300
         done
     networks: [internal]
+    mem_limit: 16m
 
 networks:
   internal:
     driver: bridge
+  edge:
+    external: true
 
 volumes:
   mysql_data:

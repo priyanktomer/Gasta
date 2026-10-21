@@ -103,6 +103,51 @@ it.
 
 ---
 
+## Memory, and the VM it shares
+
+The instance is shared with another project, and Gasta has about **3 GB** of
+it. Every container has a hard `mem_limit` (no swap on this host). The numbers
+and the reasoning are at the top of `deploy/docker-compose.yml`.
+
+| | api | mysql | redis | caddy | duckdns |
+|---|---|---|---|---|---|
+| prod | 896M (heap 70%) | 768M (pool 256M) | 64M (maxmemory 40mb) | 128M | 16M |
+| staging | 640M (heap 60%) | 512M (pool 128M) | 64M (maxmemory 40mb) | n/a | n/a |
+
+**Staging is stopped when nobody is using it.** It holds about 680 MiB idle.
+`stop`, not `down`, so the containers and the data stay:
+
+```bash
+ssh ubuntu@140.238.248.77 'cd /opt/gasta && docker compose --env-file .env.staging -f docker-compose.staging.yml start'
+```
+
+```bash
+ssh ubuntu@140.238.248.77 'cd /opt/gasta && docker compose --env-file .env.staging -f docker-compose.staging.yml stop'
+```
+
+While it is stopped, `staging.yapan.duckdns.org` answers 502, and so does any
+app build pointed at it.
+
+**Checking for OOM kills:** `docker inspect --format '{{.Name}} {{.State.OOMKilled}} {{.RestartCount}}' $(docker ps -aq)`.
+
+### Caddy is shared too
+
+The other project's sites are served by Gasta's Caddy. The Caddyfile ends with
+`import /etc/caddy/sites/*.caddy`. Host `/opt/edge/sites` and `/opt/edge/www`
+are mounted read-only, and that project's containers join the external `edge`
+network so Caddy can reach them.
+
+⚠️ **A broken file in `/opt/edge/sites` is Gasta's problem too.** `caddy
+reload` refuses an invalid config and keeps the old one running, so a reload
+fails safe. But if the Caddy container is restarted (a deploy that recreates
+it, or a host reboot) while a broken file is in that directory, Caddy does not
+start, and **yapan.duckdns.org goes down with it**. Validate before every
+reload:
+
+```bash
+cd /opt/gasta && docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+```
+
 ## Schema changes
 
 **Add a field to an `@Entity` and restart. Do not write SQL.**

@@ -23,9 +23,9 @@
 # all of it, so it will never warn about any of it. If those become the failure
 # mode, that is when a second VM earns its place.
 #
-# ⚠️ **Memory is capped so staging cannot starve production.** Half of what prod
-# gets, which is ample for one developer poking at it, and the reason a runaway
-# staging container is a staging problem rather than an outage.
+# ⚠️ **Memory is capped so staging cannot starve production**, and the whole
+# host is a shared ~3 GB budget (see the top of docker-compose.yml). Stop this
+# stack when nobody is using it; RUNBOOK has the two commands.
 #
 #     ./deploy.sh ubuntu@host staging
 #
@@ -68,6 +68,10 @@ services:
       GASTA_REDIS_PORT: 6379
       GASTA_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}
       GASTA_ALLOWED_ORIGINS: https://${GASTA_STAGING_DOMAIN:?set GASTA_STAGING_DOMAIN in .env.staging}
+      # 60% of 640M, not the Dockerfile's 70%. The JVM needs ~250M outside the
+      # heap (metaspace, code cache, threads) whatever the heap is, and at 70%
+      # a full 448M heap plus that would cross the limit and be OOM-killed.
+      JAVA_OPTS: -XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError
       # ⚠️ Push is deliberately NOT configured here. `FcmPushSender` is
       # @ConditionalOnProperty on this path, so leaving it unset means staging
       # logs pushes instead of sending them — and a test on staging cannot
@@ -89,10 +93,7 @@ services:
       # edit that writes `mysql` would reach production again and say nothing.
       # The real answer is a network shared with Caddy alone; see O-50.
       - gasta_internal
-    deploy:
-      resources:
-        limits:
-          memory: 1500m
+    mem_limit: 640m
 
   staging-mysql:
     image: mysql:8.0.46
@@ -107,6 +108,8 @@ services:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
       - --default-time-zone=+05:30
+      - --innodb-buffer-pool-size=128M
+      - --performance-schema=OFF
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -116,15 +119,13 @@ services:
       retries: 12
       start_period: 40s
     networks: [internal]
-    deploy:
-      resources:
-        limits:
-          memory: 1g
+    mem_limit: 512m
 
   staging-redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}", "--appendonly", "yes"]
+    # Same reasoning as prod's: 40mb under a 64M limit, TTL'd keys only.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env.staging}", "--appendonly", "yes", "--maxmemory", "40mb", "--maxmemory-policy", "volatile-lru"]
     volumes:
       - redis_data:/data
     healthcheck:
@@ -134,10 +135,7 @@ services:
       retries: 12
       start_period: 10s
     networks: [internal]
-    deploy:
-      resources:
-        limits:
-          memory: 256m
+    mem_limit: 64m
 
 networks:
   internal:

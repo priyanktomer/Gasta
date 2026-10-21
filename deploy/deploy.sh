@@ -135,11 +135,17 @@ else
 fi
 
 # ── 4. load and restart ──────────────────────────────────────────────────
+# ⚠️ **The tag is written into the env file after the restart.** It used to be
+# passed on the command line only, so `.env` kept whatever tag was there the
+# first time. On 2026-10-21 prod's `.env` still said `02a9cc7`, a build eight
+# weeks older than the one running, and any plain `docker compose up` (say, to
+# change a memory limit) would have quietly rolled the API back to it.
 echo "==> loading and restarting"
 ssh "${SSH_OPTS[@]}" "$TARGET" "cd $REMOTE_DIR \
 	&& docker load -i gasta-api-$TAG.tar \
 	&& rm -f gasta-api-$TAG.tar \
 	&& GASTA_TAG=$TAG docker compose --env-file $ENV_FILE -f $COMPOSE_FILE up -d --remove-orphans \
+	&& { grep -q '^GASTA_TAG=' $ENV_FILE && sed -i 's/^GASTA_TAG=.*/GASTA_TAG=$TAG/' $ENV_FILE || echo 'GASTA_TAG=$TAG' >> $ENV_FILE; } \
 	&& docker image prune -f"
 
 # ⚠️ **`up -d` does not restart Caddy when only the Caddyfile changed.** The
